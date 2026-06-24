@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recipes</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f6f7f9;
+      color: #222;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    .nav {
+      margin-bottom: 16px;
+    }
+    .nav a {
+      color: #007aff;
+      text-decoration: none;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      margin: 0 4px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      width: 100%;
+      max-width: 500px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    input[type="text"], textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #d1d1d6;
+      border-radius: 12px;
+      font-size: 1rem;
+      margin-bottom: 12px;
+      outline: none;
+      font-family: inherit;
+    }
+    input[type="text"]:focus, textarea:focus {
+      border-color: #007aff;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      background: #007aff;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    button:disabled {
+      background: #a8c6e8;
+    }
+    button.secondary {
+      background: #34c759;
+    }
+    button.danger {
+      background: #ff3b30;
+    }
+    .search-wrap {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    .search-wrap input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d1d6;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      outline: none;
+      margin-bottom: 0;
+    }
+    .search-wrap input:focus {
+      border-color: #007aff;
+    }
+    .search-results {
+      border: 1px solid #d1d1d6;
+      border-radius: 10px;
+      max-height: 180px;
+      overflow-y: auto;
+      display: none;
+      margin-top: 4px;
+    }
+    .search-results.show {
+      display: block;
+    }
+    .search-results .sr-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .search-results .sr-item:hover {
+      background: #f2f2f7;
+    }
+    .search-results .sr-item .cat {
+      font-size: 0.75rem;
+      color: #8e8e93;
+      background: #f2f2f7;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .selected-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+      min-height: 30px;
+    }
+    .item-tag {
+      display: inline-flex;
+      align-items: center;
+      background: #007aff;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .item-tag .remove {
+      margin-left: 6px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .recipe-list {
+      width: 100%;
+      max-width: 500px;
+    }
+    .recipe-card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      padding: 20px;
+      margin-bottom: 12px;
+    }
+    .recipe-card h3 {
+      margin: 0 0 4px;
+      font-size: 1.2rem;
+    }
+    .recipe-card .desc {
+      color: #8e8e93;
+      font-size: 0.85rem;
+      margin-bottom: 10px;
+    }
+    .recipe-card .ingredients {
+      font-size: 0.85rem;
+      color: #555;
+      margin-bottom: 10px;
+    }
+    .allergen-section {
+      margin-top: 8px;
+    }
+    .allergen-section .label {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #8e8e93;
+      margin-bottom: 6px;
+    }
+    .allergen-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .allergen-badge {
+      display: inline-block;
+      background: #ff3b30;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      text-align: center;
+    }
+    .allergen-badge .count {
+      font-weight: 700;
+      font-size: 0.7rem;
+      background: rgba(255,255,255,0.25);
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 4px;
+    }
+    .allergen-badge .items {
+      font-size: 0.65rem;
+      opacity: 0.85;
+      display: block;
+      margin-top: 2px;
+    }
+    .allergen-badge.none {
+      background: #34c759;
+    }
+    .recipe-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #ff3b30;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+      font-weight: 700;
+    }
+    .empty {
+      text-align: center;
+      color: #8e8e93;
+      padding: 30px 20px;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #007aff;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      animation: spin 0.8s linear infinite;
+      margin: 12px auto;
+      display: none;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .success-msg {
+      color: #34c759;
+      font-weight: 600;
+      text-align: center;
+    }
+    .error {
+      color: #ff3b30;
+      font-weight: 600;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Recipes</h1>
+  <div class="nav">
+    <a href="/static/">Scan</a>
+    <a href="/static/search.html">Search</a>
+    <a href="/static/recipes.html">Recipes</a>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1.1rem;margin:0 0 12px;">Create Recipe</h2>
+    <label for="recipeName">Recipe name</label>
+    <input type="text" id="recipeName" placeholder="e.g., Mac & Cheese" />
+
+    <label for="recipeDesc">Description (optional)</label>
+    <textarea id="recipeDesc" placeholder="Brief description..."></textarea>
+
+    <label>Ingredients</label>
+    <div class="selected-items" id="selectedItems"></div>
+    <div class="search-wrap">
+      <input type="text" id="itemSearch" placeholder="Search ingredients..." autocomplete="off" />
+      <div class="search-results" id="itemSearchResults"></div>
+    </div>
+
+    <button id="createBtn" disabled>Create Recipe</button>
+    <div id="createMsg"></div>
+    <div class="spinner" id="createSpinner"></div>
+  </div>
+
+  <div class="recipe-list" id="recipeList"></div>
+
+  <script>
+    const recipeName = document.getElementById('recipeName');
+    const recipeDesc = document.getElementById('recipeDesc');
+    const itemSearch = document.getElementById('itemSearch');
+    const itemSearchResults = document.getElementById('itemSearchResults');
+    const selectedItems = document.getElementById('selectedItems');
+    const createBtn = document.getElementById('createBtn');
+    const createMsg = document.getElementById('createMsg');
+    const createSpinner = document.getElementById('createSpinner');
+    const recipeList = document.getElementById('recipeList');
+
+    let selectedFoodItems = [];
+    let allFoodItems = [];
+
+    fetch('/food-items').then(r => r.json()).then(data => { allFoodItems = data; }).catch(() => {});
+
+    function updateCreateBtn() {
+      createBtn.disabled = !(recipeName.value.trim() && selectedFoodItems.length > 0);
+    }
+
+    recipeName.addEventListener('input', updateCreateBtn);
+
+    itemSearch.addEventListener('input', () => {
+      const q = itemSearch.value.trim().toLowerCase();
+      if (!q) {
+        itemSearchResults.classList.remove('show');
+        return;
+      }
+      const selectedIds = new Set(selectedFoodItems.map(i => i.id));
+      const matches = allFoodItems.filter(i => !selectedIds.has(i.id) && i.name.toLowerCase().includes(q));
+      itemSearchResults.innerHTML = matches.length
+        ? matches.map(i =>
+            `<div class="sr-item" data-id="${i.id}">
+              <span>${highlightMatch(escapeHtml(i.name), q)}</span>
+              ${i.category ? `<span class="cat">${escapeHtml(i.category)}</span>` : ''}
+            </div>`
+          ).join('')
+        : '<div class="sr-item" style="color:#8e8e93;">No items found</div>';
+
+      itemSearchResults.querySelectorAll('.sr-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const id = parseInt(el.dataset.id);
+          const item = allFoodItems.find(i => i.id === id);
+          if (item) {
+            selectedFoodItems.push(item);
+            renderSelectedItems();
+            itemSearch.value = '';
+            itemSearchResults.classList.remove('show');
+            updateCreateBtn();
+          }
+        });
+      });
+      itemSearchResults.classList.add('show');
+    });
+
+    itemSearch.addEventListener('blur', () => {
+      setTimeout(() => itemSearchResults.classList.remove('show'), 200);
+    });
+
+    function renderSelectedItems() {
+      selectedItems.innerHTML = selectedFoodItems.map(i =>
+        `<span class="item-tag">${escapeHtml(i.name)} <span class="remove" data-id="${i.id}">&times;</span></span>`
+      ).join('');
+      selectedItems.querySelectorAll('.remove').forEach(el => {
+        el.addEventListener('click', () => {
+          selectedFoodItems = selectedFoodItems.filter(i => i.id !== parseInt(el.dataset.id));
+          renderSelectedItems();
+          updateCreateBtn();
+        });
+      });
+    }
+
+    createBtn.addEventListener('click', async () => {
+      const name = recipeName.value.trim();
+      if (!name || selectedFoodItems.length === 0) return;
+
+      createBtn.disabled = true;
+      createSpinner.style.display = 'block';
+      createMsg.innerHTML = '';
+
+      try {
+        const resp = await fetch('/recipes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name,
+            description: recipeDesc.value.trim() || null,
+            food_item_ids: selectedFoodItems.map(i => i.id)
+          })
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        createMsg.innerHTML = '<div class="success-msg">Recipe created!</div>';
+        recipeName.value = '';
+        recipeDesc.value = '';
+        selectedFoodItems = [];
+        renderSelectedItems();
+        updateCreateBtn();
+        loadLastRecipe();
+      } catch (err) {
+        createMsg.innerHTML = `<div class="error">Error: ${escapeHtml(err.message)}</div>`;
+      } finally {
+        createBtn.disabled = false;
+        createSpinner.style.display = 'none';
+      }
+    });
+
+    async function loadLastRecipe() {
+      try {
+        const resp = await fetch('/recipes');
+        if (!resp.ok) throw new Error();
+        const recipes = await resp.json();
+        if (!recipes.length) {
+          recipeList.innerHTML = '<div class="empty">No recipes yet. Create one above!</div>';
+          return;
+        }
+        const r = recipes[recipes.length - 1];
+        const allergens = r.allergens || [];
+        const tags = allergens.length
+          ? allergens.map(a => {
+              const itemsStr = a.items ? a.items.join(', ') : '';
+              return `<span class="allergen-badge">${escapeHtml(a.name)} <span class="count">${a.count}&times;</span><span class="items">${escapeHtml(itemsStr)}</span></span>`;
+            }).join('')
+          : '<span class="allergen-badge none">No allergens</span>';
+        recipeList.innerHTML = `
+          <div class="recipe-card">
+            <div class="recipe-header">
+              <div>
+                <h3>${escapeHtml(r.name)}</h3>
+                ${r.description ? `<div class="desc">${escapeHtml(r.description)}</div>` : ''}
+                <div class="ingredients"><strong>Ingredients:</strong> ${r.items.map(i => escapeHtml(i.name)).join(', ')}</div>
+              </div>
+              <button class="delete-btn" data-id="${r.id}" title="Delete recipe">&times;</button>
+            </div>
+            <div class="allergen-section">
+              <div class="label">Allergens (combined)</div>
+              <div class="allergen-group">${tags}</div>
+            </div>
+          </div>
+        `;
+        document.querySelector('.delete-btn')?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm('Delete this recipe?')) return;
+          try {
+            const resp = await fetch(`/recipes/${r.id}`, { method: 'DELETE' });
+            if (!resp.ok) throw new Error(await resp.text());
+            loadLastRecipe();
+          } catch (err) {
+            alert('Error: ' + err.message);
+          }
+        });
+      } catch {
+        recipeList.innerHTML = '<div class="empty" style="color:#ff3b30;">Error loading recipes.</div>';
+      }
+    }
+
+    function highlightMatch(text, query) {
+      const idx = text.toLowerCase().indexOf(query.toLowerCase());
+      if (idx === -1) return text;
+      return text.slice(0, idx) + '<strong>' + text.slice(idx, idx + query.length) + '</strong>' + text.slice(idx + query.length);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    loadLastRecipe();
+  </script>
+</body>
+</html>

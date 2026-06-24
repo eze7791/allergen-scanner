@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Allergen Scanner</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f6f7f9;
+      color: #222;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 12px; }
+    .nav {
+      margin-bottom: 16px;
+    }
+    .nav a {
+      color: #007aff;
+      text-decoration: none;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      margin: 0 4px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      width: 100%;
+      max-width: 420px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    input[type="file"] {
+      width: 100%;
+      margin-bottom: 12px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #d1d1d6;
+      border-radius: 12px;
+      font-size: 1rem;
+      margin-bottom: 12px;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      background: #007aff;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    button:disabled {
+      background: #a8c6e8;
+    }
+    button.secondary {
+      background: #34c759;
+    }
+    #canvasWrapper {
+      position: relative;
+      width: 100%;
+      margin-top: 12px;
+      display: none;
+      touch-action: none;
+    }
+    canvas {
+      width: 100%;
+      border-radius: 12px;
+      display: block;
+    }
+    #overlay {
+      position: absolute;
+      border: 2px dashed #007aff;
+      background: rgba(0,122,255,0.15);
+      pointer-events: none;
+      display: none;
+    }
+    .instructions {
+      font-size: 0.85rem;
+      color: #8e8e93;
+      margin: 8px 0;
+      text-align: center;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #007aff;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 12px auto 0;
+      display: none;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* Review panel */
+    #review {
+      display: none;
+      margin-top: 16px;
+      border-top: 1px solid #e5e5ea;
+      padding-top: 16px;
+    }
+    #review .section-label {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      background: #007aff;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .tag .remove {
+      margin-left: 6px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .search-wrap {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    .search-wrap input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d1d6;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .search-wrap input:focus {
+      border-color: #007aff;
+    }
+    .search-results {
+      border: 1px solid #d1d1d6;
+      border-radius: 10px;
+      max-height: 180px;
+      overflow-y: auto;
+      display: none;
+      margin-top: 4px;
+    }
+    .search-results.show {
+      display: block;
+    }
+    .search-results .sr-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .search-results .sr-item:hover {
+      background: #f2f2f7;
+    }
+    .search-results .sr-create {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: #34c759;
+      font-weight: 600;
+    }
+    .search-results .sr-create:hover {
+      background: #f2f2f7;
+    }
+    .search-results .sr-empty {
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      color: #8e8e93;
+    }
+    .result {
+      margin-top: 16px;
+    }
+    .result h3 { margin: 0 0 8px; }
+    .allergen-tag {
+      display: inline-block;
+      background: #ff3b30;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      margin: 4px 4px 0 0;
+      font-size: 0.85rem;
+    }
+    .none { background: #34c759; }
+    .error { color: #ff3b30; font-weight: 600; }
+    .success-msg {
+      color: #34c759;
+      font-weight: 600;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Allergen Scanner</h1>
+  <div class="nav">
+    <a href="/static/">Scan</a>
+    <a href="/static/search.html">Search</a>
+    <a href="/static/recipes.html">Recipes</a>
+  </div>
+  <div class="card">
+    <label for="name">Product name</label>
+    <input type="text" id="name" placeholder="e.g., Nutella" />
+
+    <label for="photo">Take a photo of the ingredients label</label>
+    <input type="file" id="photo" accept="image/*" capture="environment" />
+
+    <div id="canvasWrapper">
+      <canvas id="canvas"></canvas>
+      <div id="overlay"></div>
+    </div>
+    <p class="instructions" id="hint" style="display:none;">Drag to select the ingredients area (optional)</p>
+
+    <button id="scanBtn" disabled>Scan &amp; Review</button>
+
+    <div class="spinner" id="spinner"></div>
+
+    <!-- Review panel (shown after OCR scan) -->
+    <div id="review">
+      <div class="section-label">Detected allergens</div>
+      <div class="tag-list" id="detectedTags"></div>
+      <div class="section-label">Add more allergens</div>
+      <div class="search-wrap">
+        <input type="text" id="searchAllergen" placeholder="Search allergens..." autocomplete="off" />
+        <div class="search-results" id="searchResults"></div>
+      </div>
+      <button id="saveBtn" class="secondary" disabled>Confirm Save</button>
+      <div class="result" id="result"></div>
+    </div>
+  </div>
+
+  <script>
+    const photoInput = document.getElementById('photo');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const canvasWrapper = document.getElementById('canvasWrapper');
+    const overlay = document.getElementById('overlay');
+    const scanBtn = document.getElementById('scanBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const resultDiv = document.getElementById('result');
+    const spinner = document.getElementById('spinner');
+    const nameInput = document.getElementById('name');
+    const hint = document.getElementById('hint');
+    const review = document.getElementById('review');
+    const detectedTags = document.getElementById('detectedTags');
+    const searchAllergen = document.getElementById('searchAllergen');
+    const searchResults = document.getElementById('searchResults');
+
+    let originalImage = null;
+    let isDragging = false;
+    let startX, startY, endX, endY;
+    let hasCrop = false;
+
+    // All known allergens (loaded from API on page load)
+    let allAllergens = [];
+
+    // Scan result data
+    let scanData = null;
+    let selectedAllergenIds = new Set();
+
+    // Load all known allergens on page load
+    fetch('/allergens').then(r => r.json()).then(data => { allAllergens = data; }).catch(() => {});
+
+    function updateScanBtn() {
+      const hasFile = !!photoInput.files[0];
+      const hasName = nameInput.value.trim().length > 0;
+      scanBtn.disabled = !(hasFile && hasName);
+    }
+
+    photoInput.addEventListener('change', () => {
+      const file = photoInput.files[0];
+      review.style.display = 'none';
+      resultDiv.innerHTML = '';
+      scanData = null;
+      if (!file) {
+        canvasWrapper.style.display = 'none';
+        hint.style.display = 'none';
+        hasCrop = false;
+        updateScanBtn();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        originalImage = new Image();
+        originalImage.onload = () => {
+          const maxWidth = 400;
+          const ratio = Math.min(maxWidth / originalImage.width, 1);
+          canvas.width = originalImage.width * ratio;
+          canvas.height = originalImage.height * ratio;
+          ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
+          canvasWrapper.style.display = 'block';
+          hint.style.display = 'block';
+          overlay.style.display = 'none';
+          hasCrop = false;
+          updateScanBtn();
+        };
+        originalImage.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    nameInput.addEventListener('input', updateScanBtn);
+
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    }
+
+    canvas.addEventListener('mousedown', (e) => { startDrag(e); });
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrag(e); }, {passive:false});
+
+    function startDrag(e) {
+      isDragging = true;
+      const pos = getPos(e);
+      startX = pos.x;
+      startY = pos.y;
+      endX = pos.x;
+      endY = pos.y;
+      overlay.style.display = 'block';
+      updateOverlay();
+    }
+
+    window.addEventListener('mousemove', (e) => { if (isDragging) drag(e); });
+    window.addEventListener('touchmove', (e) => { if (isDragging) { e.preventDefault(); drag(e); } }, {passive:false});
+
+    function drag(e) {
+      if (!isDragging) return;
+      const pos = getPos(e);
+      endX = pos.x;
+      endY = pos.y;
+      updateOverlay();
+    }
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    window.addEventListener('touchend', () => { isDragging = false; });
+
+    function updateOverlay() {
+      const x = Math.min(startX, endX);
+      const y = Math.min(startY, endY);
+      const w = Math.abs(endX - startX);
+      const h = Math.abs(endY - startY);
+      overlay.style.left = x + 'px';
+      overlay.style.top = y + 'px';
+      overlay.style.width = w + 'px';
+      overlay.style.height = h + 'px';
+      hasCrop = w > 10 && h > 10;
+    }
+
+    function getCroppedBlob(callback) {
+      if (!hasCrop) {
+        callback(null);
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const sx = originalImage.width / rect.width;
+      const sy = originalImage.height / rect.height;
+
+      const x = Math.min(startX, endX) * sx;
+      const y = Math.min(startY, endY) * sy;
+      const w = Math.abs(endX - startX) * sx;
+      const h = Math.abs(endY - startY) * sy;
+
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = w;
+      cropCanvas.height = h;
+      const cctx = cropCanvas.getContext('2d');
+      cctx.drawImage(originalImage, x, y, w, h, 0, 0, w, h);
+
+      cropCanvas.toBlob((blob) => {
+        callback(blob);
+      }, 'image/jpeg', 0.92);
+    }
+
+    // Step 1: Scan & Review
+    scanBtn.addEventListener('click', () => {
+      const file = photoInput.files[0];
+      if (!file) return;
+
+      scanBtn.disabled = true;
+      spinner.style.display = 'block';
+      review.style.display = 'none';
+      resultDiv.innerHTML = '';
+
+      const formData = new FormData();
+
+      if (hasCrop) {
+        getCroppedBlob((blob) => {
+          if (blob) {
+            formData.append('file', blob, 'cropped.jpg');
+          } else {
+            formData.append('file', file);
+          }
+          doScan(formData);
+        });
+      } else {
+        formData.append('file', file);
+        doScan(formData);
+      }
+    });
+
+    async function doScan(formData) {
+      try {
+        const resp = await fetch('/scan', { method: 'POST', body: formData });
+        if (!resp.ok) throw new Error(await resp.text());
+        scanData = await resp.json();
+
+        selectedAllergenIds = new Set(scanData.detected_allergens.map(a => a.id));
+        renderReview();
+      } catch (err) {
+        resultDiv.innerHTML = `<div class="error">Error: ${escapeHtml(err.message)}</div>`;
+      } finally {
+        scanBtn.disabled = false;
+        spinner.style.display = 'none';
+      }
+    }
+
+    // Step 2: Review and modify allergens
+    function renderReview() {
+      renderDetectedTags();
+      searchAllergen.value = '';
+      searchResults.classList.remove('show');
+      searchResults.innerHTML = '';
+
+      review.style.display = 'block';
+      saveBtn.disabled = false;
+      searchAllergen.focus();
+    }
+
+    function renderDetectedTags() {
+      const selected = allAllergens.filter(a => selectedAllergenIds.has(a.id));
+      if (selected.length === 0) {
+        detectedTags.innerHTML = '<span style="color:#8e8e93;font-size:0.85rem;">None detected</span>';
+        return;
+      }
+      detectedTags.innerHTML = selected.map(a =>
+        `<span class="tag">${escapeHtml(a.name)} <span class="remove" data-id="${a.id}">&times;</span></span>`
+      ).join('');
+
+      detectedTags.querySelectorAll('.remove').forEach(el => {
+        el.addEventListener('click', () => {
+          selectedAllergenIds.delete(parseInt(el.dataset.id));
+          renderDetectedTags();
+        });
+      });
+    }
+
+    // Search as user types
+    searchAllergen.addEventListener('input', () => {
+      const q = searchAllergen.value.trim().toLowerCase();
+      if (!q) {
+        searchResults.classList.remove('show');
+        return;
+      }
+
+      const available = allAllergens.filter(a => !selectedAllergenIds.has(a.id));
+      const matches = available.filter(a => a.name.toLowerCase().includes(q));
+
+      let html = '';
+      if (matches.length > 0) {
+        html = matches.map(a =>
+          `<div class="sr-item" data-id="${a.id}">+ ${escapeHtml(a.name)}</div>`
+        ).join('');
+      }
+
+      // Offer to create if no exact match
+      const exactMatch = allAllergens.some(a => a.name.toLowerCase() === q);
+      if (!exactMatch) {
+        html += `<div class="sr-create" data-name="${escapeHtml(q)}">+ Create &quot;${escapeHtml(q)}&quot;</div>`;
+      }
+
+      if (!html) {
+        html = '<div class="sr-empty">No allergens found</div>';
+      }
+
+      searchResults.innerHTML = html;
+      searchResults.classList.add('show');
+
+      // Click existing allergen
+      searchResults.querySelectorAll('.sr-item').forEach(el => {
+        el.addEventListener('click', () => {
+          selectedAllergenIds.add(parseInt(el.dataset.id));
+          searchAllergen.value = '';
+          searchResults.classList.remove('show');
+          renderDetectedTags();
+        });
+      });
+
+      // Click create new
+      searchResults.querySelectorAll('.sr-create').forEach(el => {
+        el.addEventListener('click', async () => {
+          const name = el.dataset.name;
+          try {
+            const resp = await fetch('/allergens', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: name, description: '' })
+            });
+            if (!resp.ok) throw new Error(await resp.text());
+            const newAllergen = await resp.json();
+            allAllergens.push(newAllergen);
+            selectedAllergenIds.add(newAllergen.id);
+            searchAllergen.value = '';
+            searchResults.classList.remove('show');
+            renderDetectedTags();
+          } catch (err) {
+            alert('Error creating allergen: ' + err.message);
+          }
+        });
+      });
+    });
+
+    // Hide search results on blur
+    searchAllergen.addEventListener('blur', () => {
+      setTimeout(() => searchResults.classList.remove('show'), 200);
+    });
+
+    // Step 3: Confirm save
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      spinner.style.display = 'block';
+      resultDiv.innerHTML = '';
+
+      try {
+        const resp = await fetch('/food-items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: nameInput.value.trim(),
+            description: 'Scanned from image',
+            category: 'Scanned',
+            image_path: scanData.image_path,
+            allergen_ids: Array.from(selectedAllergenIds)
+          })
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+
+        const allergens = data.allergens || [];
+        const allergensHtml = allergens.length
+          ? allergens.map(a => `<span class="allergen-tag">${escapeHtml(a.name)}</span>`).join('')
+          : '<span class="allergen-tag none">No allergens</span>';
+
+        resultDiv.innerHTML = `
+          <div class="success-msg">Saved successfully!</div>
+          <h3>${escapeHtml(data.name)}</h3>
+          <div>${allergensHtml}</div>
+        `;
+        review.style.display = 'none';
+      } catch (err) {
+        resultDiv.innerHTML = `<div class="error">Error: ${escapeHtml(err.message)}</div>`;
+      } finally {
+        saveBtn.disabled = false;
+        spinner.style.display = 'none';
+      }
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

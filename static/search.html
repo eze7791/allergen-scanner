@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search Products</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f6f7f9;
+      color: #222;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    .nav {
+      margin-bottom: 16px;
+    }
+    .nav a {
+      color: #007aff;
+      text-decoration: none;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      margin: 0 4px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      width: 100%;
+      max-width: 500px;
+      padding: 24px;
+    }
+    .search-wrap {
+      position: relative;
+      width: 100%;
+    }
+    .search-wrap input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #d1d1d6;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-wrap input:focus {
+      border-color: #007aff;
+    }
+    .suggestions {
+      border: 1px solid #d1d1d6;
+      border-radius: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      display: none;
+      margin-top: 6px;
+      background: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .suggestions.show {
+      display: block;
+    }
+    .suggestions .sg-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid #f2f2f7;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .suggestions .sg-item:last-child {
+      border-bottom: none;
+    }
+    .suggestions .sg-item:hover {
+      background: #f2f2f7;
+    }
+    .suggestions .sg-item .name {
+      font-weight: 600;
+    }
+    .suggestions .sg-item .category {
+      font-size: 0.8rem;
+      color: #8e8e93;
+      background: #f2f2f7;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .suggestions .sg-empty {
+      padding: 16px;
+      text-align: center;
+      color: #8e8e93;
+    }
+    .results {
+      margin-top: 20px;
+    }
+    .result-card {
+      background: #f9f9fb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid #e5e5ea;
+    }
+    .result-card h3 {
+      margin: 0 0 6px;
+      font-size: 1.1rem;
+    }
+    .result-card .meta {
+      font-size: 0.85rem;
+      color: #8e8e93;
+      margin-bottom: 8px;
+    }
+    .allergen-tag {
+      display: inline-block;
+      background: #ff3b30;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 8px;
+      margin: 3px 4px 0 0;
+      font-size: 0.8rem;
+    }
+    .allergen-tag.none {
+      background: #34c759;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #007aff;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      animation: spin 0.8s linear infinite;
+      margin: 12px auto;
+      display: none;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .empty-state {
+      text-align: center;
+      color: #8e8e93;
+      padding: 30px 20px;
+    }
+    .result-card .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .result-card .actions button {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .result-card .actions .edit-btn {
+      background: #007aff;
+      color: #fff;
+    }
+    .result-card .actions .delete-btn {
+      background: #ff3b30;
+      color: #fff;
+    }
+    .edit-form {
+      margin-top: 12px;
+      padding: 12px;
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid #d1d1d6;
+    }
+    .edit-form input, .edit-form textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d1d1d6;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      outline: none;
+      font-family: inherit;
+    }
+    .edit-form input:focus, .edit-form textarea:focus {
+      border-color: #007aff;
+    }
+    .edit-form .edit-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .edit-form .edit-actions button {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .edit-form .edit-actions .save-btn {
+      background: #34c759;
+      color: #fff;
+    }
+    .edit-form .edit-actions .cancel-btn {
+      background: #f2f2f7;
+      color: #222;
+    }
+    .edit-form .allergen-edit {
+      margin-bottom: 8px;
+    }
+    .edit-form .allergen-edit .label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #8e8e93;
+      margin-bottom: 6px;
+    }
+    .edit-form .allergen-edit .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .edit-form .allergen-edit .tag-list .tag {
+      display: inline-flex;
+      align-items: center;
+      background: #ff3b30;
+      color: #fff;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+    .edit-form .allergen-edit .tag-list .tag .remove {
+      margin-left: 4px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .edit-form .allergen-edit .search-wrap {
+      position: relative;
+    }
+    .edit-form .allergen-edit .search-wrap input {
+      margin-bottom: 0;
+    }
+    .edit-form .allergen-edit .search-results {
+      border: 1px solid #d1d1d6;
+      border-radius: 8px;
+      max-height: 140px;
+      overflow-y: auto;
+      display: none;
+      margin-top: 4px;
+      background: #fff;
+    }
+    .edit-form .allergen-edit .search-results.show {
+      display: block;
+    }
+    .edit-form .allergen-edit .search-results .sr-item {
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .edit-form .allergen-edit .search-results .sr-item:hover {
+      background: #f2f2f7;
+    }
+    .edit-form .allergen-edit .search-results .sr-empty {
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      color: #8e8e93;
+    }
+  </style>
+</head>
+<body>
+  <h1>Search Products</h1>
+  <div class="nav">
+    <a href="/static/">Scan</a>
+    <a href="/static/search.html">Search</a>
+    <a href="/static/recipes.html">Recipes</a>
+  </div>
+  <div class="card">
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Search products..." autocomplete="off" />
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+    <div class="spinner" id="spinner"></div>
+    <div class="results" id="results"></div>
+  </div>
+
+  <script>
+    const searchInput = document.getElementById('searchInput');
+    const suggestions = document.getElementById('suggestions');
+    const results = document.getElementById('results');
+    const spinner = document.getElementById('spinner');
+
+    let debounceTimer = null;
+    let selectedIndex = -1;
+
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      const q = searchInput.value.trim();
+      if (!q) {
+        suggestions.classList.remove('show');
+        suggestions.innerHTML = '';
+        selectedIndex = -1;
+        return;
+      }
+      debounceTimer = setTimeout(() => fetchSuggestions(q), 150);
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      const items = suggestions.querySelectorAll('.sg-item');
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+        highlightItem(items);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, -1);
+        highlightItem(items);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (selectedIndex >= 0 && items[selectedIndex]) {
+          items[selectedIndex].click();
+        } else {
+          searchProducts(q);
+        }
+      } else if (e.key === 'Escape') {
+        suggestions.classList.remove('show');
+        selectedIndex = -1;
+      }
+    });
+
+    searchInput.addEventListener('blur', () => {
+      setTimeout(() => { suggestions.classList.remove('show'); selectedIndex = -1; }, 200);
+    });
+
+    function highlightItem(items) {
+      items.forEach((el, i) => {
+        el.style.background = i === selectedIndex ? '#e8f0fe' : '';
+      });
+    }
+
+    async function fetchSuggestions(q) {
+      try {
+        const resp = await fetch(`/food-items/suggest?q=${encodeURIComponent(q)}`);
+        if (!resp.ok) throw new Error();
+        const data = await resp.json();
+        renderSuggestions(data, q);
+      } catch {
+        suggestions.classList.remove('show');
+      }
+    }
+
+    function renderSuggestions(data, q) {
+      selectedIndex = -1;
+      const items = data.items || [];
+      const recipes = data.recipes || [];
+      if (!items.length && !recipes.length) {
+        suggestions.innerHTML = '<div class="sg-empty">No products or recipes found</div>';
+        suggestions.classList.add('show');
+        return;
+      }
+      let html = '';
+      if (items.length) {
+        html += '<div style="padding:6px 12px;font-size:0.7rem;font-weight:700;color:#8e8e93;text-transform:uppercase;">Products</div>';
+        html += items.map(item =>
+          `<div class="sg-item" data-type="item" data-id="${item.id}">
+            <span class="name">${highlightMatch(escapeHtml(item.name), q)}</span>
+            ${item.category ? `<span class="category">${escapeHtml(item.category)}</span>` : ''}
+          </div>`
+        ).join('');
+      }
+      if (recipes.length) {
+        html += '<div style="padding:6px 12px;font-size:0.7rem;font-weight:700;color:#8e8e93;text-transform:uppercase;border-top:1px solid #f2f2f7;">Recipes</div>';
+        html += recipes.map(r =>
+          `<div class="sg-item" data-type="recipe" data-id="${r.id}">
+            <span class="name">${highlightMatch(escapeHtml(r.name), q)}</span>
+            <span class="category" style="background:#34c759;color:#fff;">Recipe</span>
+          </div>`
+        ).join('');
+      }
+
+      suggestions.innerHTML = html;
+      suggestions.querySelectorAll('.sg-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const type = el.dataset.type;
+          const id = parseInt(el.dataset.id);
+          suggestions.classList.remove('show');
+          searchInput.value = el.querySelector('.name').textContent.trim();
+          if (type === 'recipe') {
+            fetchRecipe(id);
+          } else {
+            fetchProduct(id);
+          }
+        });
+      });
+      suggestions.classList.add('show');
+    }
+
+    async function fetchRecipe(id) {
+      spinner.style.display = 'block';
+      results.innerHTML = '';
+      try {
+        const resp = await fetch(`/recipes/${id}`);
+        if (!resp.ok) throw new Error();
+        const recipe = await resp.json();
+        results.innerHTML = renderRecipeHtml(recipe);
+      } catch {
+        results.innerHTML = '<div class="empty-state" style="color:#ff3b30;">Error loading recipe.</div>';
+      } finally {
+        spinner.style.display = 'none';
+      }
+    }
+
+    function highlightMatch(text, query) {
+      const idx = text.toLowerCase().indexOf(query.toLowerCase());
+      if (idx === -1) return text;
+      return text.slice(0, idx) + '<strong>' + text.slice(idx, idx + query.length) + '</strong>' + text.slice(idx + query.length);
+    }
+
+    async function searchProducts(q) {
+      spinner.style.display = 'block';
+      results.innerHTML = '';
+      suggestions.classList.remove('show');
+      try {
+        const resp = await fetch(`/food-items/suggest?q=${encodeURIComponent(q)}`);
+        const data = await resp.json();
+        const items = data.items || [];
+        const recipes = data.recipes || [];
+        let html = '';
+        if (items.length) {
+          const fullItems = await Promise.all(items.map(item =>
+            fetch(`/food-items/${item.id}`).then(r => r.json())
+          ));
+          html += '<div style="font-size:0.8rem;font-weight:700;color:#8e8e93;text-transform:uppercase;margin-bottom:8px;">Products</div>';
+          html += renderResultsHtml(fullItems);
+        }
+        if (recipes.length) {
+          const fullRecipes = await Promise.all(recipes.map(r =>
+            fetch(`/recipes/${r.id}`).then(r => r.json())
+          ));
+          html += '<div style="font-size:0.8rem;font-weight:700;color:#8e8e93;text-transform:uppercase;margin:12px 0 8px;">Recipes</div>';
+          html += fullRecipes.map(renderRecipeHtml).join('');
+        }
+        results.innerHTML = html || '<div class="empty-state">No products or recipes match your search.</div>';
+      } catch {
+        results.innerHTML = '<div class="empty-state" style="color:#ff3b30;">Error searching.</div>';
+      } finally {
+        spinner.style.display = 'none';
+      }
+    }
+
+    async function fetchProduct(id) {
+      spinner.style.display = 'block';
+      results.innerHTML = '';
+      try {
+        const resp = await fetch(`/food-items/${id}`);
+        if (!resp.ok) throw new Error();
+        const item = await resp.json();
+        results.innerHTML = renderResultsHtml([item]);
+      } catch {
+        results.innerHTML = '<div class="empty-state" style="color:#ff3b30;">Error loading product.</div>';
+      } finally {
+        spinner.style.display = 'none';
+      }
+    }
+
+    function renderResultsHtml(items) {
+      return items.map(item => `
+        <div class="result-card" id="card-${item.id}">
+          <h3>${escapeHtml(item.name)}</h3>
+          <div class="meta">
+            ${item.category ? escapeHtml(item.category) : 'Uncategorized'}
+            ${item.description ? ' &middot; ' + escapeHtml(item.description) : ''}
+          </div>
+          <div id="allergens-${item.id}">${renderAllergenTags(item.allergens || [])}</div>
+          <div class="actions">
+            <button class="edit-btn" onclick="showEditForm(${item.id})">Edit</button>
+            <button class="delete-btn" onclick="deleteItem(${item.id})">Delete</button>
+          </div>
+          <div id="edit-form-${item.id}"></div>
+        </div>
+      `).join('');
+    }
+
+    function renderAllergenTags(allergens) {
+      if (!allergens.length) return '<span class="allergen-tag none">No allergens</span>';
+      return allergens.map(a => `<span class="allergen-tag">${escapeHtml(a.name)}</span>`).join('');
+    }
+
+    let _editAllergenIds = {};
+    let _allAllergensCached = [];
+    let _allFoodItemsCached = [];
+
+    fetch('/allergens').then(r => r.json()).then(d => { _allAllergensCached = d; });
+    fetch('/food-items').then(r => r.json()).then(d => { _allFoodItemsCached = d; });
+
+    function showEditForm(id) {
+      const container = document.getElementById(`edit-form-${id}`);
+      if (container.innerHTML) { container.innerHTML = ''; return; }
+      fetch(`/food-items/${id}`).then(r => r.json()).then(item => {
+        _editAllergenIds[id] = new Set((item.allergens || []).map(a => a.id));
+        container.innerHTML = `
+          <div class="edit-form">
+            <input type="text" id="edit-name-${id}" value="${escapeHtml(item.name)}" placeholder="Name" />
+            <textarea id="edit-desc-${id}" placeholder="Description">${escapeHtml(item.description || '')}</textarea>
+            <input type="text" id="edit-cat-${id}" value="${escapeHtml(item.category || '')}" placeholder="Category" />
+            <div class="allergen-edit">
+              <div class="label">Allergens</div>
+              <div class="tag-list" id="edit-tags-${id}"></div>
+              <div class="search-wrap">
+                <input type="text" id="edit-search-${id}" placeholder="Add allergen..." autocomplete="off" />
+                <div class="search-results" id="edit-search-results-${id}"></div>
+              </div>
+            </div>
+            <div class="edit-actions">
+              <button class="save-btn" onclick="saveEdit(${id})">Save</button>
+              <button class="cancel-btn" onclick="cancelEdit(${id})">Cancel</button>
+            </div>
+          </div>
+        `;
+        renderEditTags(id);
+        setupEditSearch(id);
+      });
+    }
+
+    function renderEditTags(id) {
+      const container = document.getElementById(`edit-tags-${id}`);
+      const selectedIds = _editAllergenIds[id];
+      if (!selectedIds || !selectedIds.size) { container.innerHTML = '<span style="color:#8e8e93;font-size:0.8rem;">None</span>'; return; }
+      const selected = _allAllergensCached.filter(a => selectedIds.has(a.id));
+      container.innerHTML = selected.map(a =>
+        `<span class="tag">${escapeHtml(a.name)} <span class="remove" onclick="removeEditAllergen(${id}, ${a.id})">&times;</span></span>`
+      ).join('');
+    }
+
+    function setupEditSearch(id) {
+      const input = document.getElementById(`edit-search-${id}`);
+      const results = document.getElementById(`edit-search-results-${id}`);
+
+      input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        if (!q) { results.classList.remove('show'); return; }
+        const selectedIds = _editAllergenIds[id] || new Set();
+        const available = _allAllergensCached.filter(a => !selectedIds.has(a.id) && a.name.toLowerCase().includes(q));
+        results.innerHTML = available.length
+          ? available.map(a => `<div class="sr-item" onclick="addEditAllergen(${id}, ${a.id})">+ ${escapeHtml(a.name)}</div>`).join('')
+          : '<div class="sr-empty">No allergens found</div>';
+        results.classList.add('show');
+      });
+
+      input.addEventListener('blur', () => setTimeout(() => results.classList.remove('show'), 200));
+    }
+
+    window.addEditAllergen = (itemId, allergenId) => {
+      if (!_editAllergenIds[itemId]) _editAllergenIds[itemId] = new Set();
+      _editAllergenIds[itemId].add(allergenId);
+      renderEditTags(itemId);
+      document.getElementById(`edit-search-${itemId}`).value = '';
+      document.getElementById(`edit-search-results-${itemId}`).classList.remove('show');
+    };
+    window.removeEditAllergen = (itemId, allergenId) => {
+      if (_editAllergenIds[itemId]) {
+        _editAllergenIds[itemId].delete(allergenId);
+        renderEditTags(itemId);
+      }
+    };
+
+    async function saveEdit(id) {
+      const name = document.getElementById(`edit-name-${id}`).value.trim();
+      if (!name) return alert('Name is required');
+      const description = document.getElementById(`edit-desc-${id}`).value.trim() || null;
+      const category = document.getElementById(`edit-cat-${id}`).value.trim() || null;
+      const allergenIds = _editAllergenIds[id] ? Array.from(_editAllergenIds[id]) : [];
+
+      try {
+        const resp = await fetch(`/food-items/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, category, allergen_ids: allergenIds })
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const updated = await resp.json();
+        document.querySelector(`#card-${id} h3`).textContent = updated.name;
+        const meta = document.querySelector(`#card-${id} .meta`);
+        if (meta) meta.innerHTML = `${escapeHtml(updated.category || 'Uncategorized')}${updated.description ? ' &middot; ' + escapeHtml(updated.description) : ''}`;
+        document.getElementById(`allergens-${id}`).innerHTML = renderAllergenTags(updated.allergens || []);
+        cancelEdit(id);
+      } catch (err) {
+        alert('Error saving: ' + err.message);
+      }
+    }
+
+    function cancelEdit(id) {
+      delete _editAllergenIds[id];
+      document.getElementById(`edit-form-${id}`).innerHTML = '';
+    }
+
+    async function deleteItem(id) {
+      if (!confirm('Delete this item?')) return;
+      try {
+        const resp = await fetch(`/food-items/${id}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error(await resp.text());
+        document.getElementById(`card-${id}`)?.remove();
+      } catch (err) {
+        alert('Error deleting: ' + err.message);
+      }
+    }
+
+    function renderRecipeHtml(recipe) {
+      const allergens = recipe.allergens || [];
+      const tags = allergens.length
+        ? allergens.map(a => {
+            const itemsStr = a.items ? a.items.join(', ') : '';
+            return `<span class="allergen-tag">${escapeHtml(a.name)} <span style="font-size:0.65rem;opacity:0.8;">(&times;${a.count}: ${escapeHtml(itemsStr)})</span></span>`;
+          }).join('')
+        : '<span class="allergen-tag none">No allergens</span>';
+      const itemsStr = recipe.items.map(i => escapeHtml(i.name)).join(', ');
+      return `
+        <div class="result-card" style="border-left:4px solid #34c759;" id="recipe-card-${recipe.id}">
+          <h3>${escapeHtml(recipe.name)} <span style="font-size:0.75rem;color:#34c759;font-weight:600;">Recipe</span></h3>
+          ${recipe.description ? `<div class="meta">${escapeHtml(recipe.description)}</div>` : ''}
+          <div class="meta" id="recipe-ingredients-${recipe.id}"><strong>Ingredients:</strong> ${itemsStr}</div>
+          <div id="recipe-allergens-${recipe.id}" style="margin-top:8px;">${tags}</div>
+          <div class="actions">
+            <button class="edit-btn" onclick="showRecipeEditForm(${recipe.id})">Edit</button>
+            <button class="delete-btn" onclick="deleteRecipe(${recipe.id})">Delete</button>
+          </div>
+          <div id="recipe-edit-form-${recipe.id}"></div>
+        </div>
+      `;
+    }
+
+    let _recipeItemIds = {};
+
+    function showRecipeEditForm(id) {
+      const container = document.getElementById(`recipe-edit-form-${id}`);
+      if (container.innerHTML) { container.innerHTML = ''; return; }
+      fetch(`/recipes/${id}`).then(r => r.json()).then(recipe => {
+        _recipeItemIds[id] = new Set(recipe.items.map(i => i.id));
+        container.innerHTML = `
+          <div class="edit-form">
+            <input type="text" id="r-name-${id}" value="${escapeHtml(recipe.name)}" placeholder="Recipe name" />
+            <textarea id="r-desc-${id}" placeholder="Description">${escapeHtml(recipe.description || '')}</textarea>
+            <div class="allergen-edit">
+              <div class="label">Ingredients</div>
+              <div class="tag-list" id="r-items-${id}"></div>
+              <div class="search-wrap">
+                <input type="text" id="r-search-${id}" placeholder="Add ingredient..." autocomplete="off" />
+                <div class="search-results" id="r-search-results-${id}"></div>
+              </div>
+            </div>
+            <div class="edit-actions">
+              <button class="save-btn" onclick="saveRecipeEdit(${id})">Save</button>
+              <button class="cancel-btn" onclick="cancelRecipeEdit(${id})">Cancel</button>
+            </div>
+          </div>
+        `;
+        renderRecipeItems(id);
+        setupRecipeItemSearch(id);
+      });
+    }
+
+    function renderRecipeItems(id) {
+      const container = document.getElementById(`r-items-${id}`);
+      const itemIds = _recipeItemIds[id];
+      if (!itemIds || !itemIds.size) { container.innerHTML = '<span style="color:#8e8e93;font-size:0.8rem;">None</span>'; return; }
+      const selected = _allFoodItemsCached.filter(i => itemIds.has(i.id));
+      container.innerHTML = selected.map(i =>
+        `<span class="tag" style="background:#007aff;">${escapeHtml(i.name)} <span class="remove" onclick="removeRecipeItem(${id}, ${i.id})">&times;</span></span>`
+      ).join('');
+    }
+
+    function setupRecipeItemSearch(id) {
+      const input = document.getElementById(`r-search-${id}`);
+      const results = document.getElementById(`r-search-results-${id}`);
+
+      input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        if (!q) { results.classList.remove('show'); return; }
+        const itemIds = _recipeItemIds[id] || new Set();
+        const available = _allFoodItemsCached.filter(i => !itemIds.has(i.id) && i.name.toLowerCase().includes(q));
+        results.innerHTML = available.length
+          ? available.map(i => `<div class="sr-item" onclick="addRecipeItem(${id}, ${i.id})">+ ${escapeHtml(i.name)}</div>`).join('')
+          : '<div class="sr-empty">No items found</div>';
+        results.classList.add('show');
+      });
+      input.addEventListener('blur', () => setTimeout(() => results.classList.remove('show'), 200));
+    }
+
+    window.addRecipeItem = (id, itemId) => {
+      if (!_recipeItemIds[id]) _recipeItemIds[id] = new Set();
+      _recipeItemIds[id].add(itemId);
+      renderRecipeItems(id);
+      document.getElementById(`r-search-${id}`).value = '';
+      document.getElementById(`r-search-results-${id}`).classList.remove('show');
+    };
+    window.removeRecipeItem = (id, itemId) => {
+      if (_recipeItemIds[id]) {
+        _recipeItemIds[id].delete(itemId);
+        renderRecipeItems(id);
+      }
+    };
+
+    async function saveRecipeEdit(id) {
+      const name = document.getElementById(`r-name-${id}`).value.trim();
+      if (!name) return alert('Name is required');
+      const description = document.getElementById(`r-desc-${id}`).value.trim() || null;
+      const ids = _recipeItemIds[id];
+      const foodItemIds = ids ? Array.from(ids) : [];
+      try {
+        const resp = await fetch(`/recipes/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, food_item_ids: foodItemIds })
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const updated = await resp.json();
+        document.querySelector(`#recipe-card-${id} h3`).innerHTML = `${escapeHtml(updated.name)} <span style="font-size:0.75rem;color:#34c759;font-weight:600;">Recipe</span>`;
+        const meta = document.getElementById(`recipe-ingredients-${id}`);
+        if (meta) meta.innerHTML = `<strong>Ingredients:</strong> ${updated.items.map(i => escapeHtml(i.name)).join(', ')}`;
+        document.getElementById(`recipe-allergens-${id}`).innerHTML = (updated.allergens || []).length
+          ? updated.allergens.map(a => {
+              const itemsStr = a.items ? a.items.join(', ') : '';
+              return `<span class="allergen-tag">${escapeHtml(a.name)} <span style="font-size:0.65rem;opacity:0.8;">(&times;${a.count}: ${escapeHtml(itemsStr)})</span></span>`;
+            }).join('')
+          : '<span class="allergen-tag none">No allergens</span>';
+        cancelRecipeEdit(id);
+      } catch (err) {
+        alert('Error saving: ' + err.message);
+      }
+    }
+
+    function cancelRecipeEdit(id) {
+      delete _recipeItemIds[id];
+      document.getElementById(`recipe-edit-form-${id}`).innerHTML = '';
+    }
+
+    async function deleteRecipe(id) {
+      if (!confirm('Delete this recipe?')) return;
+      try {
+        const resp = await fetch(`/recipes/${id}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error(await resp.text());
+        document.getElementById(`recipe-card-${id}`)?.remove();
+      } catch (err) {
+        alert('Error deleting: ' + err.message);
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
