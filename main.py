@@ -4,83 +4,28 @@ import asyncio
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import select, Table, Column, Integer, String, ForeignKey
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from database import init_db, async_session, Base
+from database import init_db
+from models import AllergenORM, FoodItemORM, RecipeORM, RestaurantORM, UserORM, UserRole
+from auth import (
+    get_db,
+    get_current_user,
+    require_admin,
+    hash_pin,
+    verify_pin,
+    generate_join_code,
+    create_access_token,
+)
 import ocr_service
 
 app = FastAPI(
     title="Food Allergen API",
     description="API for managing food items and their allergens",
-    version="0.1.0"
-)
-
-food_allergen_association = Table(
-    "food_allergen_association",
-    Base.metadata,
-    Column("food_item_id", Integer, ForeignKey("food_items.id"), primary_key=True),
-    Column("allergen_id", Integer, ForeignKey("allergens.id"), primary_key=True),
-)
-
-recipe_items_association = Table(
-    "recipe_items",
-    Base.metadata,
-    Column("recipe_id", Integer, ForeignKey("recipes.id"), primary_key=True),
-    Column("food_item_id", Integer, ForeignKey("food_items.id"), primary_key=True),
-)
-
-
-class AllergenORM(Base):
-    __tablename__ = "allergens"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, unique=True, index=True)
-    description = Column(String, nullable=True)
-
-
-class FoodItemORM(Base):
-    __tablename__ = "food_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, index=True)
-    description = Column(String, nullable=True)
-    category = Column(String, nullable=True)
-    image_path = Column(String, nullable=True)
-
-    allergens = None
-
-
-class RecipeORM(Base):
-    __tablename__ = "recipes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, index=True)
-    description = Column(String, nullable=True)
-
-    items = None
-
-
-# Late binding for relationship to avoid import order issues
-from sqlalchemy.orm import relationship
-FoodItemORM.allergens = relationship(
-    "AllergenORM",
-    secondary=food_allergen_association,
-    back_populates="food_items",
-    lazy="selectin"
-)
-AllergenORM.food_items = relationship(
-    "FoodItemORM",
-    secondary=food_allergen_association,
-    back_populates="allergens",
-    lazy="selectin"
-)
-RecipeORM.items = relationship(
-    "FoodItemORM",
-    secondary=recipe_items_association,
-    lazy="selectin"
+    version="0.2.0"
 )
 
 
@@ -156,9 +101,30 @@ class RecipeOut(BaseModel):
         from_attributes = True
 
 
-async def get_db() -> AsyncSession:
-    async with async_session() as session:
-        yield session
+class RestaurantCreate(BaseModel):
+    name: str
+    admin_pin: str
+
+
+class RestaurantAuthOut(BaseModel):
+    token: str
+    restaurant_id: int
+    restaurant_name: str
+    join_code: str
+    role: str
+
+
+class RestaurantJoin(BaseModel):
+    join_code: str
+
+
+class AdminLogin(BaseModel):
+    join_code: str
+    admin_pin: str
+
+
+class ScanTextRequest(BaseModel):
+    text_lines: list[str]
 
 
 @app.on_event("startup")
@@ -166,15 +132,91 @@ async def on_startup():
     await init_db()
 
 
+@app.post("/restaurants", response_model=RestaurantAuthOut)
+async def create_restaurant(data: RestaurantCreate, db: AsyncSession = Depends(get_db)):
+    join_code = generate_join_code()
+    restaurant = RestaurantORM(name=data.name, join_code=join_code, admin_pin_hash=hash_pin(data.admin_pin))
+    db.add(restaurant)
+    await db.commit()
+    await db.refresh(restaurant)
+
+    admin_user = UserORM(restaurant_id=restaurant.id, role=UserRole.admin)
+    db.add(admin_user)
+    await db.commit()
+    await db.refresh(admin_user)
+
+    token = create_access_token(admin_user.id, restaurant.id, UserRole.admin)
+    return RestaurantAuthOut(
+        token=token,
+        restaurant_id=restaurant.id,
+        restaurant_name=restaurant.name,
+        join_code=restaurant.join_code,
+        role=UserRole.admin.value,
+    )
+
+
+@app.post("/restaurants/join", response_model=RestaurantAuthOut)
+async def join_restaurant(data: RestaurantJoin, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(RestaurantORM).where(RestaurantORM.join_code == data.join_code))
+    restaurant = result.scalar_one_or_none()
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Invalid join code")
+
+    staff_user = UserORM(restaurant_id=restaurant.id, role=UserRole.staff)
+    db.add(staff_user)
+    await db.commit()
+    await db.refresh(staff_user)
+
+    token = create_access_token(staff_user.id, restaurant.id, UserRole.staff)
+    return RestaurantAuthOut(
+        token=token,
+        restaurant_id=restaurant.id,
+        restaurant_name=restaurant.name,
+        join_code=restaurant.join_code,
+        role=UserRole.staff.value,
+    )
+
+
+@app.post("/auth/admin-login", response_model=RestaurantAuthOut)
+async def admin_login(data: AdminLogin, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(RestaurantORM).where(RestaurantORM.join_code == data.join_code))
+    restaurant = result.scalar_one_or_none()
+    if not restaurant or not verify_pin(data.admin_pin, restaurant.admin_pin_hash):
+        raise HTTPException(status_code=401, detail="Invalid join code or admin PIN")
+
+    result = await db.execute(
+        select(UserORM).where(UserORM.restaurant_id == restaurant.id, UserORM.role == UserRole.admin).limit(1)
+    )
+    admin_user = result.scalar_one_or_none()
+    if not admin_user:
+        admin_user = UserORM(restaurant_id=restaurant.id, role=UserRole.admin)
+        db.add(admin_user)
+        await db.commit()
+        await db.refresh(admin_user)
+
+    token = create_access_token(admin_user.id, restaurant.id, UserRole.admin)
+    return RestaurantAuthOut(
+        token=token,
+        restaurant_id=restaurant.id,
+        restaurant_name=restaurant.name,
+        join_code=restaurant.join_code,
+        role=UserRole.admin.value,
+    )
+
+
 @app.get("/allergens", response_model=list[AllergenOut])
-async def list_allergens(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(AllergenORM))
+async def list_allergens(db: AsyncSession = Depends(get_db), user: UserORM = Depends(get_current_user)):
+    result = await db.execute(select(AllergenORM).where(AllergenORM.restaurant_id == user.restaurant_id))
     return result.scalars().all()
 
 
 @app.post("/allergens", response_model=AllergenOut)
-async def create_allergen(allergen: AllergenCreate, db: AsyncSession = Depends(get_db)):
-    db_allergen = AllergenORM(**allergen.model_dump())
+async def create_allergen(
+    allergen: AllergenCreate,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
+    db_allergen = AllergenORM(restaurant_id=user.restaurant_id, **allergen.model_dump())
     db.add(db_allergen)
     await db.commit()
     await db.refresh(db_allergen)
@@ -182,24 +224,32 @@ async def create_allergen(allergen: AllergenCreate, db: AsyncSession = Depends(g
 
 
 @app.get("/food-items", response_model=list[FoodItemOut])
-async def list_food_items(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FoodItemORM).options(selectinload(FoodItemORM.allergens)))
+async def list_food_items(db: AsyncSession = Depends(get_db), user: UserORM = Depends(get_current_user)):
+    result = await db.execute(
+        select(FoodItemORM)
+        .where(FoodItemORM.restaurant_id == user.restaurant_id)
+        .options(selectinload(FoodItemORM.allergens))
+    )
     return result.scalars().all()
 
 
 @app.get("/food-items/suggest")
-async def suggest_food_items(q: str = "", db: AsyncSession = Depends(get_db)):
+async def suggest_food_items(
+    q: str = "",
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(get_current_user),
+):
     if not q:
         return []
     items_result = await db.execute(
         select(FoodItemORM)
-        .where(FoodItemORM.name.ilike(f"%{q}%"))
+        .where(FoodItemORM.restaurant_id == user.restaurant_id, FoodItemORM.name.ilike(f"%{q}%"))
         .limit(10)
     )
     items = items_result.scalars().all()
     recipes_result = await db.execute(
         select(RecipeORM)
-        .where(RecipeORM.name.ilike(f"%{q}%"))
+        .where(RecipeORM.restaurant_id == user.restaurant_id, RecipeORM.name.ilike(f"%{q}%"))
         .limit(5)
     )
     recipes = recipes_result.scalars().all()
@@ -210,20 +260,29 @@ async def suggest_food_items(q: str = "", db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/recipes", response_model=list[RecipeOut])
-async def list_recipes(db: AsyncSession = Depends(get_db)):
+async def list_recipes(db: AsyncSession = Depends(get_db), user: UserORM = Depends(get_current_user)):
     result = await db.execute(
-        select(RecipeORM).options(selectinload(RecipeORM.items).selectinload(FoodItemORM.allergens))
+        select(RecipeORM)
+        .where(RecipeORM.restaurant_id == user.restaurant_id)
+        .options(selectinload(RecipeORM.items).selectinload(FoodItemORM.allergens))
     )
     recipes = result.scalars().all()
     return [_enrich_recipe(r) for r in recipes]
 
 
 @app.post("/recipes", response_model=RecipeOut)
-async def create_recipe(recipe: RecipeCreate, db: AsyncSession = Depends(get_db)):
-    db_recipe = RecipeORM(name=recipe.name, description=recipe.description)
+async def create_recipe(
+    recipe: RecipeCreate,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
+    db_recipe = RecipeORM(restaurant_id=user.restaurant_id, name=recipe.name, description=recipe.description)
     if recipe.food_item_ids:
         items_result = await db.execute(
-            select(FoodItemORM).where(FoodItemORM.id.in_(recipe.food_item_ids))
+            select(FoodItemORM).where(
+                FoodItemORM.id.in_(recipe.food_item_ids),
+                FoodItemORM.restaurant_id == user.restaurant_id,
+            )
         )
         db_recipe.items = items_result.scalars().all()
     db.add(db_recipe)
@@ -237,10 +296,15 @@ async def create_recipe(recipe: RecipeCreate, db: AsyncSession = Depends(get_db)
 
 
 @app.put("/recipes/{recipe_id}", response_model=RecipeOut)
-async def update_recipe(recipe_id: int, data: RecipeUpdate, db: AsyncSession = Depends(get_db)):
+async def update_recipe(
+    recipe_id: int,
+    data: RecipeUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
     result = await db.execute(
         select(RecipeORM)
-        .where(RecipeORM.id == recipe_id)
+        .where(RecipeORM.id == recipe_id, RecipeORM.restaurant_id == user.restaurant_id)
         .options(selectinload(RecipeORM.items).selectinload(FoodItemORM.allergens))
     )
     recipe = result.scalar_one_or_none()
@@ -252,7 +316,10 @@ async def update_recipe(recipe_id: int, data: RecipeUpdate, db: AsyncSession = D
         recipe.description = data.description
     if data.food_item_ids is not None:
         items_result = await db.execute(
-            select(FoodItemORM).where(FoodItemORM.id.in_(data.food_item_ids))
+            select(FoodItemORM).where(
+                FoodItemORM.id.in_(data.food_item_ids),
+                FoodItemORM.restaurant_id == user.restaurant_id,
+            )
         )
         recipe.items = items_result.scalars().all()
     await db.commit()
@@ -263,10 +330,14 @@ async def update_recipe(recipe_id: int, data: RecipeUpdate, db: AsyncSession = D
 
 
 @app.get("/recipes/{recipe_id}", response_model=RecipeOut)
-async def read_recipe(recipe_id: int, db: AsyncSession = Depends(get_db)):
+async def read_recipe(
+    recipe_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(get_current_user),
+):
     result = await db.execute(
         select(RecipeORM)
-        .where(RecipeORM.id == recipe_id)
+        .where(RecipeORM.id == recipe_id, RecipeORM.restaurant_id == user.restaurant_id)
         .options(selectinload(RecipeORM.items).selectinload(FoodItemORM.allergens))
     )
     recipe = result.scalar_one_or_none()
@@ -276,8 +347,14 @@ async def read_recipe(recipe_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @app.delete("/recipes/{recipe_id}")
-async def delete_recipe(recipe_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(RecipeORM).where(RecipeORM.id == recipe_id))
+async def delete_recipe(
+    recipe_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
+    result = await db.execute(
+        select(RecipeORM).where(RecipeORM.id == recipe_id, RecipeORM.restaurant_id == user.restaurant_id)
+    )
     recipe = result.scalar_one_or_none()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
@@ -317,10 +394,14 @@ def _enrich_recipe(recipe: RecipeORM) -> dict:
 
 
 @app.get("/food-items/{item_id}", response_model=FoodItemOut)
-async def read_food_item(item_id: int, db: AsyncSession = Depends(get_db)):
+async def read_food_item(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(get_current_user),
+):
     result = await db.execute(
         select(FoodItemORM)
-        .where(FoodItemORM.id == item_id)
+        .where(FoodItemORM.id == item_id, FoodItemORM.restaurant_id == user.restaurant_id)
         .options(selectinload(FoodItemORM.allergens))
     )
     item = result.scalar_one_or_none()
@@ -330,10 +411,15 @@ async def read_food_item(item_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @app.put("/food-items/{item_id}", response_model=FoodItemOut)
-async def update_food_item(item_id: int, food: FoodItemUpdate, db: AsyncSession = Depends(get_db)):
+async def update_food_item(
+    item_id: int,
+    food: FoodItemUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
     result = await db.execute(
         select(FoodItemORM)
-        .where(FoodItemORM.id == item_id)
+        .where(FoodItemORM.id == item_id, FoodItemORM.restaurant_id == user.restaurant_id)
         .options(selectinload(FoodItemORM.allergens))
     )
     db_food = result.scalar_one_or_none()
@@ -350,7 +436,10 @@ async def update_food_item(item_id: int, food: FoodItemUpdate, db: AsyncSession 
         db_food.image_path = food.image_path
     if food.allergen_ids is not None:
         allergens_result = await db.execute(
-            select(AllergenORM).where(AllergenORM.id.in_(food.allergen_ids))
+            select(AllergenORM).where(
+                AllergenORM.id.in_(food.allergen_ids),
+                AllergenORM.restaurant_id == user.restaurant_id,
+            )
         )
         db_food.allergens = allergens_result.scalars().all()
 
@@ -360,11 +449,24 @@ async def update_food_item(item_id: int, food: FoodItemUpdate, db: AsyncSession 
 
 
 @app.post("/food-items", response_model=FoodItemOut)
-async def create_food_item(food: FoodItemCreate, db: AsyncSession = Depends(get_db)):
-    db_food = FoodItemORM(name=food.name, description=food.description, category=food.category, image_path=food.image_path)
+async def create_food_item(
+    food: FoodItemCreate,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
+    db_food = FoodItemORM(
+        restaurant_id=user.restaurant_id,
+        name=food.name,
+        description=food.description,
+        category=food.category,
+        image_path=food.image_path,
+    )
     if food.allergen_ids:
         allergens_result = await db.execute(
-            select(AllergenORM).where(AllergenORM.id.in_(food.allergen_ids))
+            select(AllergenORM).where(
+                AllergenORM.id.in_(food.allergen_ids),
+                AllergenORM.restaurant_id == user.restaurant_id,
+            )
         )
         db_food.allergens = allergens_result.scalars().all()
     db.add(db_food)
@@ -374,9 +476,13 @@ async def create_food_item(food: FoodItemCreate, db: AsyncSession = Depends(get_
 
 
 @app.delete("/food-items/{item_id}")
-async def delete_food_item(item_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_food_item(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
     result = await db.execute(
-        select(FoodItemORM).where(FoodItemORM.id == item_id)
+        select(FoodItemORM).where(FoodItemORM.id == item_id, FoodItemORM.restaurant_id == user.restaurant_id)
     )
     item = result.scalar_one_or_none()
     if not item:
@@ -389,7 +495,8 @@ async def delete_food_item(item_id: int, db: AsyncSession = Depends(get_db)):
 @app.post("/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(get_current_user),
 ):
     contents = await file.read()
     text_lines = await asyncio.to_thread(ocr_service.extract_text_from_image, contents)
@@ -403,19 +510,39 @@ async def scan_image(
     with open(filepath, "wb") as f:
         f.write(contents)
 
-    # Load known allergens from the database
-    result = await db.execute(select(AllergenORM))
-    known_allergens = result.scalars().all()
-    known_names = [a.name for a in known_allergens]
-
-    # Match allergens in the extracted text
-    found_names = ocr_service.find_allergens_in_text(text_lines, known_names)
+    detected, known = await _match_allergens(db, user.restaurant_id, text_lines)
 
     return {
         "image_path": f"/uploads/{filename}",
-        "detected_allergens": [{"id": a.id, "name": a.name} for a in known_allergens if a.name in found_names],
-        "all_allergens": [{"id": a.id, "name": a.name} for a in known_allergens]
+        "detected_allergens": detected,
+        "all_allergens": known,
     }
+
+
+@app.post("/scan/text")
+async def scan_text(
+    data: ScanTextRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(get_current_user),
+):
+    """Match allergens against text already extracted on-device (e.g. by Apple Vision on iOS)."""
+    detected, known = await _match_allergens(db, user.restaurant_id, data.text_lines)
+    return {
+        "detected_allergens": detected,
+        "all_allergens": known,
+    }
+
+
+async def _match_allergens(db: AsyncSession, restaurant_id: int, text_lines: list[str]):
+    result = await db.execute(select(AllergenORM).where(AllergenORM.restaurant_id == restaurant_id))
+    known_allergens = result.scalars().all()
+    known_names = [a.name for a in known_allergens]
+
+    found_names = ocr_service.find_allergens_in_text(text_lines, known_names)
+
+    detected = [{"id": a.id, "name": a.name} for a in known_allergens if a.name in found_names]
+    known = [{"id": a.id, "name": a.name} for a in known_allergens]
+    return detected, known
 
 
 app.mount("/uploads", StaticFiles(directory="static/uploads"), name="uploads")
