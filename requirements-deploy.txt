@@ -1,0 +1,13 @@
+# Slim dependency set for cloud deployment (e.g. Render free tier).
+# Excludes easyocr/torch/pillow, which are heavy (~GB, needs real RAM) and
+# only power the legacy browser-based /scan image upload. The iOS app and
+# any deployment using this file rely on /scan/text instead, which matches
+# allergens against text already extracted on-device (e.g. Apple Vision).
+fastapi[standard]>=0.115.0
+pydantic>=2.0.0
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+python-multipart>=0.0.9
+alembic>=1.13.0
+pyjwt>=2.9.0
+bcrypt>=4.1.0

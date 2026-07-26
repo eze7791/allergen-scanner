@@ -20,7 +20,13 @@ from auth import (
     generate_join_code,
     create_access_token,
 )
-import ocr_service
+try:
+    import ocr_service
+except ImportError:
+    # easyocr/torch are heavy and only needed for the browser-based image
+    # upload scan; deployments that skip them still support /scan/text
+    # (allergen matching against text already extracted on-device, e.g. iOS).
+    ocr_service = None
 
 app = FastAPI(
     title="Food Allergen API",
@@ -498,6 +504,11 @@ async def scan_image(
     db: AsyncSession = Depends(get_db),
     user: UserORM = Depends(get_current_user),
 ):
+    if ocr_service is None:
+        raise HTTPException(
+            status_code=501,
+            detail="Server-side image scanning is not available on this deployment; use /scan/text instead.",
+        )
     contents = await file.read()
     text_lines = await asyncio.to_thread(ocr_service.extract_text_from_image, contents)
 
