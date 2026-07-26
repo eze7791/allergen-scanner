@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import init_db
 from models import AllergenORM, FoodItemORM, RecipeORM, RestaurantORM, UserORM, UserRole
+from allergen_matching import find_allergens_in_text
 from auth import (
     get_db,
     get_current_user,
@@ -549,7 +550,7 @@ async def _match_allergens(db: AsyncSession, restaurant_id: int, text_lines: lis
     known_allergens = result.scalars().all()
     known_names = [a.name for a in known_allergens]
 
-    found_names = ocr_service.find_allergens_in_text(text_lines, known_names)
+    found_names = find_allergens_in_text(text_lines, known_names)
 
     detected = [{"id": a.id, "name": a.name} for a in known_allergens if a.name in found_names]
     known = [{"id": a.id, "name": a.name} for a in known_allergens]

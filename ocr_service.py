@@ -1,8 +1,9 @@
 import io
-import re
 from typing import Optional
 from PIL import Image
 import easyocr
+
+from allergen_matching import find_allergens_in_text  # noqa: F401 (re-exported for callers)
 
 # Lazy singleton reader instance
 _reader: Optional[easyocr.Reader] = None
@@ -34,15 +35,3 @@ def extract_text_from_image(image_bytes: bytes) -> list[str]:
             seen.add(stripped.lower())
             lines.append(stripped)
     return lines
-
-
-def find_allergens_in_text(text_lines: list[str], known_allergens: list[str]) -> list[str]:
-    """Return known allergen names found in the extracted text lines."""
-    found = []
-    full_text = " ".join(text_lines).lower()
-    for allergen in known_allergens:
-        # Simple whole-word-ish matching; adjust as needed
-        pattern = re.compile(r"\b" + re.escape(allergen.lower()) + r"\b")
-        if pattern.search(full_text):
-            found.append(allergen)
-    return found
