@@ -1,0 +1,33 @@
+name: AllergenScanner
+options:
+  bundleIdPrefix: com.demorestaurant
+  deploymentTarget:
+    iOS: "18.0"
+targets:
+  AllergenScanner:
+    type: application
+    platform: iOS
+    supportedDestinations: [iOS]
+    sources:
+      - path: AllergenScanner
+    info:
+      path: AllergenScanner/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSCameraUsageDescription: "AllergenScanner uses the camera to scan ingredient labels on-device and detect allergens. Photos are never uploaded or stored."
+        NSPhotoLibraryUsageDescription: "AllergenScanner can scan ingredient labels from photos in your library. Photos are never uploaded or stored."
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.demorestaurant.allergenscanner
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        DEVELOPMENT_TEAM: ""
