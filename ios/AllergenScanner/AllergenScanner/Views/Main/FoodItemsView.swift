@@ -53,7 +53,10 @@ struct FoodItemsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         if !item.allergens.isEmpty {
-                            AllergenChipsRow(allergens: item.allergens)
+                            AllergenChipsRow(allergens: item.allergens, style: .certain)
+                        }
+                        if !item.mayContainAllergens.isEmpty {
+                            AllergenChipsRow(allergens: item.mayContainAllergens, style: .mayContain)
                         }
                     }
                     .padding(.vertical, 4)
@@ -88,19 +91,44 @@ struct FoodItemsView: View {
     }
 }
 
+enum AllergenChipStyle {
+    case certain
+    case mayContain
+
+    var color: Color {
+        switch self {
+        case .certain: return .orange
+        case .mayContain: return .yellow
+        }
+    }
+
+    var prefix: String? {
+        switch self {
+        case .certain: return nil
+        case .mayContain: return "May contain: "
+        }
+    }
+}
+
 struct AllergenChipsRow: View {
     let allergens: [Allergen]
+    var style: AllergenChipStyle = .certain
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
+                if let prefix = style.prefix {
+                    Text(prefix)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(allergens) { allergen in
                     Text(allergen.name)
                         .font(.caption2.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(.orange.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.orange)
+                        .background(style.color.opacity(0.15), in: Capsule())
+                        .foregroundStyle(style.color)
                 }
             }
         }
@@ -117,6 +145,7 @@ private struct AddFoodItemSheet: View {
     @State private var description = ""
     @State private var category = ""
     @State private var selectedAllergenIds: Set<Int> = []
+    @State private var selectedMayContainIds: Set<Int> = []
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -131,7 +160,7 @@ private struct AddFoodItemSheet: View {
                 Section("Contains") {
                     ForEach(allergens) { allergen in
                         Button {
-                            toggle(allergen.id)
+                            toggle(allergen.id, in: &selectedAllergenIds, removingFrom: &selectedMayContainIds)
                         } label: {
                             HStack {
                                 Text(allergen.name)
@@ -143,6 +172,26 @@ private struct AddFoodItemSheet: View {
                         }
                         .tint(.primary)
                     }
+                }
+                Section {
+                    ForEach(allergens) { allergen in
+                        Button {
+                            toggle(allergen.id, in: &selectedMayContainIds, removingFrom: &selectedAllergenIds)
+                        } label: {
+                            HStack {
+                                Text(allergen.name)
+                                Spacer()
+                                if selectedMayContainIds.contains(allergen.id) {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        .tint(.primary)
+                    }
+                } header: {
+                    Text("May contain")
+                } footer: {
+                    Text("Use this for cross-contamination risk, e.g. a supplier that doesn't guarantee an ingredient is allergen-free.")
                 }
                 if let errorMessage {
                     Text(errorMessage).foregroundStyle(.red)
@@ -161,11 +210,12 @@ private struct AddFoodItemSheet: View {
         }
     }
 
-    private func toggle(_ id: Int) {
-        if selectedAllergenIds.contains(id) {
-            selectedAllergenIds.remove(id)
+    private func toggle(_ id: Int, in set: inout Set<Int>, removingFrom other: inout Set<Int>) {
+        if set.contains(id) {
+            set.remove(id)
         } else {
-            selectedAllergenIds.insert(id)
+            set.insert(id)
+            other.remove(id)
         }
     }
 
@@ -178,7 +228,8 @@ private struct AddFoodItemSheet: View {
                 name: name,
                 description: description.isEmpty ? nil : description,
                 category: category.isEmpty ? nil : category,
-                allergenIds: Array(selectedAllergenIds)
+                allergenIds: Array(selectedAllergenIds),
+                mayContainAllergenIds: Array(selectedMayContainIds)
             )
             await onSaved()
             dismiss()

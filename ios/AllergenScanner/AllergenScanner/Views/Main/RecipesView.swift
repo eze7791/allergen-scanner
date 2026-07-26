@@ -54,7 +54,7 @@ struct RecipesView: View {
                             if !recipe.allergens.isEmpty {
                                 Text(recipe.allergens.map(\.name).joined(separator: ", "))
                                     .font(.caption2.bold())
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(recipe.allergens.contains { $0.certain } ? .orange : .yellow)
                             }
                         }
                         .padding(.vertical, 4)
@@ -103,7 +103,10 @@ private struct RecipeDetailView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.name)
                         if !item.allergens.isEmpty {
-                            AllergenChipsRow(allergens: item.allergens)
+                            AllergenChipsRow(allergens: item.allergens, style: .certain)
+                        }
+                        if !item.mayContainAllergens.isEmpty {
+                            AllergenChipsRow(allergens: item.mayContainAllergens, style: .mayContain)
                         }
                     }
                 }
@@ -112,7 +115,14 @@ private struct RecipeDetailView: View {
                 Section("Allergen summary") {
                     ForEach(recipe.allergens) { summary in
                         VStack(alignment: .leading) {
-                            Text(summary.name).font(.headline)
+                            HStack {
+                                Text(summary.name).font(.headline)
+                                if !summary.certain {
+                                    Text("may contain")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.yellow)
+                                }
+                            }
                             Text("In: \(summary.items.joined(separator: ", "))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

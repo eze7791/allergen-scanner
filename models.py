@@ -40,6 +40,13 @@ food_allergen_association = Table(
     Column("allergen_id", Integer, ForeignKey("allergens.id"), primary_key=True),
 )
 
+food_allergen_may_contain_association = Table(
+    "food_allergen_may_contain_association",
+    Base.metadata,
+    Column("food_item_id", Integer, ForeignKey("food_items.id"), primary_key=True),
+    Column("allergen_id", Integer, ForeignKey("allergens.id"), primary_key=True),
+)
+
 recipe_items_association = Table(
     "recipe_items",
     Base.metadata,
@@ -72,6 +79,11 @@ class FoodItemORM(Base):
     allergens = relationship(
         "AllergenORM",
         secondary=food_allergen_association,
+        lazy="selectin",
+    )
+    may_contain_allergens = relationship(
+        "AllergenORM",
+        secondary=food_allergen_may_contain_association,
         lazy="selectin",
     )
 

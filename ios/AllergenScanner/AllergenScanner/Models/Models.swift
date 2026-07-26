@@ -18,10 +18,12 @@ struct FoodItem: Codable, Identifiable, Hashable {
     var category: String?
     var imagePath: String?
     var allergens: [Allergen]
+    var mayContainAllergens: [Allergen]
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, category, allergens
         case imagePath = "image_path"
+        case mayContainAllergens = "may_contain_allergens"
     }
 }
 
@@ -69,4 +71,5 @@ struct RecipeAllergenSummary: Codable, Identifiable, Hashable {
     let name: String
     let count: Int
     let items: [String]
+    let certain: Bool
 }

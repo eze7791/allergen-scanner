@@ -61,11 +61,13 @@ class FoodItemBase(BaseModel):
 
 class FoodItemCreate(FoodItemBase):
     allergen_ids: list[int] = []
+    may_contain_allergen_ids: list[int] = []
 
 
 class FoodItemOut(FoodItemBase):
     id: int
     allergens: list[AllergenOut]
+    may_contain_allergens: list[AllergenOut]
 
     class Config:
         from_attributes = True
@@ -77,6 +79,7 @@ class FoodItemUpdate(BaseModel):
     category: Optional[str] = None
     image_path: Optional[str] = None
     allergen_ids: Optional[list[int]] = None
+    may_contain_allergen_ids: Optional[list[int]] = None
 
 
 class RecipeCreate(BaseModel):
@@ -95,6 +98,7 @@ class RecipeAllergenOut(BaseModel):
     name: str
     count: int
     items: list[str]
+    certain: bool
 
 
 class RecipeOut(BaseModel):
@@ -374,13 +378,14 @@ def _enrich_recipe(recipe: RecipeORM) -> dict:
     allergen_map: dict[str, dict] = {}
     for item in recipe.items:
         seen_in_item = set()
-        for a in item.allergens:
+        for a, certain in [(a, True) for a in item.allergens] + [(a, False) for a in item.may_contain_allergens]:
             if a.name not in seen_in_item:
                 seen_in_item.add(a.name)
                 if a.name not in allergen_map:
-                    allergen_map[a.name] = {"name": a.name, "count": 0, "items": set()}
+                    allergen_map[a.name] = {"name": a.name, "count": 0, "items": set(), "certain": False}
                 allergen_map[a.name]["count"] += 1
                 allergen_map[a.name]["items"].add(item.name)
+                allergen_map[a.name]["certain"] = allergen_map[a.name]["certain"] or certain
     return {
         "id": recipe.id,
         "name": recipe.name,
@@ -392,9 +397,12 @@ def _enrich_recipe(recipe: RecipeORM) -> dict:
             "category": item.category,
             "image_path": item.image_path,
             "allergens": [{"id": a.id, "name": a.name, "description": a.description} for a in item.allergens],
+            "may_contain_allergens": [
+                {"id": a.id, "name": a.name, "description": a.description} for a in item.may_contain_allergens
+            ],
         } for item in recipe.items],
         "allergens": [
-            {"name": v["name"], "count": v["count"], "items": sorted(v["items"])}
+            {"name": v["name"], "count": v["count"], "items": sorted(v["items"]), "certain": v["certain"]}
             for v in sorted(allergen_map.values(), key=lambda x: -x["count"])
         ],
     }
@@ -449,6 +457,14 @@ async def update_food_item(
             )
         )
         db_food.allergens = allergens_result.scalars().all()
+    if food.may_contain_allergen_ids is not None:
+        may_contain_result = await db.execute(
+            select(AllergenORM).where(
+                AllergenORM.id.in_(food.may_contain_allergen_ids),
+                AllergenORM.restaurant_id == user.restaurant_id,
+            )
+        )
+        db_food.may_contain_allergens = may_contain_result.scalars().all()
 
     await db.commit()
     await db.refresh(db_food)
@@ -476,6 +492,14 @@ async def create_food_item(
             )
         )
         db_food.allergens = allergens_result.scalars().all()
+    if food.may_contain_allergen_ids:
+        may_contain_result = await db.execute(
+            select(AllergenORM).where(
+                AllergenORM.id.in_(food.may_contain_allergen_ids),
+                AllergenORM.restaurant_id == user.restaurant_id,
+            )
+        )
+        db_food.may_contain_allergens = may_contain_result.scalars().all()
     db.add(db_food)
     await db.commit()
     await db.refresh(db_food)
