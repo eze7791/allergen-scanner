@@ -38,6 +38,12 @@ struct RecipesView: View {
         }
     }
 
+    private var groupedRecipes: [(category: String, recipes: [Recipe])] {
+        Dictionary(grouping: recipes) { $0.category?.isEmpty == false ? $0.category! : "Uncategorized" }
+            .sorted { $0.key < $1.key }
+            .map { (category: $0.key, recipes: $0.value.sorted { $0.name < $1.name }) }
+    }
+
     @ViewBuilder
     private var content: some View {
         if isLoading && recipes.isEmpty {
@@ -48,13 +54,30 @@ struct RecipesView: View {
             ContentUnavailableView("No dishes yet", systemImage: "list.bullet.rectangle")
         } else {
             List {
-                ForEach(recipes) { recipe in
-                    RecipeRow(recipe: recipe)
-                        .contentShape(Rectangle())
-                        .onTapGesture { if isAdmin { editingRecipe = recipe } }
+                ForEach(groupedRecipes, id: \.category) { group in
+                    Section {
+                        ForEach(group.recipes) { recipe in
+                            RecipeRow(recipe: recipe)
+                                .contentShape(Rectangle())
+                                .onTapGesture { if isAdmin { editingRecipe = recipe } }
+                                .swipeActions(edge: .trailing) {
+                                    if isAdmin {
+                                        Button(role: .destructive) { deleteOne(recipe) } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                        Button { editingRecipe = recipe } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
+                                        .tint(.teal)
+                                    }
+                                }
+                        }
+                    } header: {
+                        Text(group.category)
+                    }
                 }
-                .onDelete(perform: isAdmin ? delete : nil)
             }
+            .listStyle(.insetGrouped)
         }
     }
 
@@ -72,14 +95,9 @@ struct RecipesView: View {
         }
     }
 
-    private func delete(at offsets: IndexSet) {
-        let idsToDelete = offsets.map { recipes[$0].id }
-        recipes.remove(atOffsets: offsets)
-        Task {
-            for id in idsToDelete {
-                try? await api.deleteRecipe(id: id)
-            }
-        }
+    private func deleteOne(_ recipe: Recipe) {
+        recipes.removeAll { $0.id == recipe.id }
+        Task { try? await api.deleteRecipe(id: recipe.id) }
     }
 }
 
@@ -87,21 +105,22 @@ private struct RecipeRow: View {
     let recipe: Recipe
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(recipe.name).font(.headline)
-            if let category = recipe.category, !category.isEmpty {
-                Text(category)
-                    .font(.caption)
+            if recipe.allergens.isEmpty && recipe.mayContainAllergens.isEmpty {
+                Text("No allergens on record")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-            }
-            if !recipe.allergens.isEmpty {
-                AllergenChipsRow(allergens: recipe.allergens, style: .certain)
-            }
-            if !recipe.mayContainAllergens.isEmpty {
-                AllergenChipsRow(allergens: recipe.mayContainAllergens, style: .mayContain)
+            } else {
+                if !recipe.allergens.isEmpty {
+                    AllergenChipsRow(allergens: recipe.allergens, style: .certain)
+                }
+                if !recipe.mayContainAllergens.isEmpty {
+                    AllergenChipsRow(allergens: recipe.mayContainAllergens, style: .mayContain)
+                }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 }
 

@@ -38,6 +38,12 @@ struct FoodItemsView: View {
         }
     }
 
+    private var groupedItems: [(category: String, items: [FoodItem])] {
+        Dictionary(grouping: foodItems) { $0.category?.isEmpty == false ? $0.category! : "Uncategorized" }
+            .sorted { $0.key < $1.key }
+            .map { (category: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
+    }
+
     @ViewBuilder
     private var content: some View {
         if isLoading && foodItems.isEmpty {
@@ -48,13 +54,30 @@ struct FoodItemsView: View {
             ContentUnavailableView("No food items yet", systemImage: "fork.knife")
         } else {
             List {
-                ForEach(foodItems) { item in
-                    FoodItemRow(item: item)
-                        .contentShape(Rectangle())
-                        .onTapGesture { if isAdmin { editingItem = item } }
+                ForEach(groupedItems, id: \.category) { group in
+                    Section {
+                        ForEach(group.items) { item in
+                            FoodItemRow(item: item)
+                                .contentShape(Rectangle())
+                                .onTapGesture { if isAdmin { editingItem = item } }
+                                .swipeActions(edge: .trailing) {
+                                    if isAdmin {
+                                        Button(role: .destructive) { deleteOne(item) } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                        Button { editingItem = item } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
+                                        .tint(.teal)
+                                    }
+                                }
+                        }
+                    } header: {
+                        Text(group.category)
+                    }
                 }
-                .onDelete(perform: isAdmin ? delete : nil)
             }
+            .listStyle(.insetGrouped)
         }
     }
 
@@ -72,14 +95,9 @@ struct FoodItemsView: View {
         }
     }
 
-    private func delete(at offsets: IndexSet) {
-        let idsToDelete = offsets.map { foodItems[$0].id }
-        foodItems.remove(atOffsets: offsets)
-        Task {
-            for id in idsToDelete {
-                try? await api.deleteFoodItem(id: id)
-            }
-        }
+    private func deleteOne(_ item: FoodItem) {
+        foodItems.removeAll { $0.id == item.id }
+        Task { try? await api.deleteFoodItem(id: item.id) }
     }
 }
 
@@ -87,21 +105,22 @@ private struct FoodItemRow: View {
     let item: FoodItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(item.name).font(.headline)
-            if let category = item.category, !category.isEmpty {
-                Text(category)
-                    .font(.caption)
+            if item.allergens.isEmpty && item.mayContainAllergens.isEmpty {
+                Text("No allergens on record")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-            }
-            if !item.allergens.isEmpty {
-                AllergenChipsRow(allergens: item.allergens, style: .certain)
-            }
-            if !item.mayContainAllergens.isEmpty {
-                AllergenChipsRow(allergens: item.mayContainAllergens, style: .mayContain)
+            } else {
+                if !item.allergens.isEmpty {
+                    AllergenChipsRow(allergens: item.allergens, style: .certain)
+                }
+                if !item.mayContainAllergens.isEmpty {
+                    AllergenChipsRow(allergens: item.mayContainAllergens, style: .mayContain)
+                }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 }
 
@@ -116,10 +135,10 @@ enum AllergenChipStyle {
         }
     }
 
-    var prefix: String? {
+    var label: String {
         switch self {
-        case .certain: return nil
-        case .mayContain: return "May contain: "
+        case .certain: return "Contains"
+        case .mayContain: return "May contain"
         }
     }
 }
@@ -129,13 +148,12 @@ struct AllergenChipsRow: View {
     var style: AllergenChipStyle = .certain
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                if let prefix = style.prefix {
-                    Text(prefix)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: 3) {
+            Text(style.label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            FlowLayout(spacing: 6) {
                 ForEach(allergens) { allergen in
                     Text(allergen.name)
                         .font(.caption2.bold())
@@ -145,6 +163,47 @@ struct AllergenChipsRow: View {
                         .foregroundStyle(style.color)
                 }
             }
+        }
+    }
+}
+
+/// Wraps its children onto multiple lines instead of clipping or scrolling,
+/// so a long allergen list is always fully visible at a glance.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > width, x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }
