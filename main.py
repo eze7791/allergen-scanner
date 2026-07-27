@@ -10,7 +10,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import init_db
-from models import AllergenORM, FoodItemORM, RecipeORM, RestaurantORM, UserORM, UserRole
+from models import (
+    AllergenORM,
+    FoodItemAllergenORM,
+    FoodItemORM,
+    RecipeAllergenORM,
+    RecipeORM,
+    RestaurantORM,
+    UserORM,
+    UserRole,
+)
 from allergen_matching import find_allergens_in_text
 from auth import (
     get_db,
@@ -52,6 +61,14 @@ class AllergenOut(AllergenBase):
         from_attributes = True
 
 
+class LinkedAllergenOut(AllergenBase):
+    id: int
+    note: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class FoodItemBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -66,8 +83,8 @@ class FoodItemCreate(FoodItemBase):
 
 class FoodItemOut(FoodItemBase):
     id: int
-    allergens: list[AllergenOut]
-    may_contain_allergens: list[AllergenOut]
+    allergens: list[LinkedAllergenOut]
+    may_contain_allergens: list[LinkedAllergenOut]
 
     class Config:
         from_attributes = True
@@ -85,28 +102,26 @@ class FoodItemUpdate(BaseModel):
 class RecipeCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    food_item_ids: list[int] = []
+    category: Optional[str] = None
+    allergen_ids: list[int] = []
+    may_contain_allergen_ids: list[int] = []
 
 
 class RecipeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    food_item_ids: Optional[list[int]] = None
-
-
-class RecipeAllergenOut(BaseModel):
-    name: str
-    count: int
-    items: list[str]
-    certain: bool
+    category: Optional[str] = None
+    allergen_ids: Optional[list[int]] = None
+    may_contain_allergen_ids: Optional[list[int]] = None
 
 
 class RecipeOut(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
-    items: list[FoodItemOut]
-    allergens: list[RecipeAllergenOut]
+    category: Optional[str] = None
+    allergens: list[LinkedAllergenOut]
+    may_contain_allergens: list[LinkedAllergenOut]
 
     class Config:
         from_attributes = True
@@ -234,14 +249,61 @@ async def create_allergen(
     return db_allergen
 
 
+def _split_allergen_links(links) -> tuple[list[dict], list[dict]]:
+    allergens, may_contain = [], []
+    for link in links:
+        entry = {
+            "id": link.allergen.id,
+            "name": link.allergen.name,
+            "description": link.allergen.description,
+            "note": link.note,
+        }
+        (allergens if link.certain else may_contain).append(entry)
+    return allergens, may_contain
+
+
+def _serialize_food_item(item: FoodItemORM) -> dict:
+    allergens, may_contain = _split_allergen_links(item.allergen_links)
+    return {
+        "id": item.id,
+        "name": item.name,
+        "description": item.description,
+        "category": item.category,
+        "image_path": item.image_path,
+        "allergens": allergens,
+        "may_contain_allergens": may_contain,
+    }
+
+
+def _serialize_recipe(recipe: RecipeORM) -> dict:
+    allergens, may_contain = _split_allergen_links(recipe.allergen_links)
+    return {
+        "id": recipe.id,
+        "name": recipe.name,
+        "description": recipe.description,
+        "category": recipe.category,
+        "allergens": allergens,
+        "may_contain_allergens": may_contain,
+    }
+
+
+async def _validate_allergen_ids(db: AsyncSession, ids: list[int], restaurant_id: int) -> list[int]:
+    if not ids:
+        return []
+    result = await db.execute(
+        select(AllergenORM.id).where(AllergenORM.id.in_(ids), AllergenORM.restaurant_id == restaurant_id)
+    )
+    return list(result.scalars().all())
+
+
 @app.get("/food-items", response_model=list[FoodItemOut])
 async def list_food_items(db: AsyncSession = Depends(get_db), user: UserORM = Depends(get_current_user)):
     result = await db.execute(
         select(FoodItemORM)
         .where(FoodItemORM.restaurant_id == user.restaurant_id)
-        .options(selectinload(FoodItemORM.allergens))
+        .options(selectinload(FoodItemORM.allergen_links).selectinload(FoodItemAllergenORM.allergen))
     )
-    return result.scalars().all()
+    return [_serialize_food_item(item) for item in result.scalars().all()]
 
 
 @app.get("/food-items/suggest")
@@ -261,12 +323,12 @@ async def suggest_food_items(
     recipes_result = await db.execute(
         select(RecipeORM)
         .where(RecipeORM.restaurant_id == user.restaurant_id, RecipeORM.name.ilike(f"%{q}%"))
-        .limit(5)
+        .limit(10)
     )
     recipes = recipes_result.scalars().all()
     return {
         "items": [{"id": item.id, "name": item.name, "category": item.category} for item in items],
-        "recipes": [{"id": r.id, "name": r.name, "type": "recipe"} for r in recipes],
+        "recipes": [{"id": r.id, "name": r.name, "category": r.category, "type": "recipe"} for r in recipes],
     }
 
 
@@ -275,10 +337,9 @@ async def list_recipes(db: AsyncSession = Depends(get_db), user: UserORM = Depen
     result = await db.execute(
         select(RecipeORM)
         .where(RecipeORM.restaurant_id == user.restaurant_id)
-        .options(selectinload(RecipeORM.items).selectinload(FoodItemORM.allergens))
+        .options(selectinload(RecipeORM.allergen_links).selectinload(RecipeAllergenORM.allergen))
     )
-    recipes = result.scalars().all()
-    return [_enrich_recipe(r) for r in recipes]
+    return [_serialize_recipe(r) for r in result.scalars().all()]
 
 
 @app.post("/recipes", response_model=RecipeOut)
@@ -287,23 +348,25 @@ async def create_recipe(
     db: AsyncSession = Depends(get_db),
     user: UserORM = Depends(require_admin),
 ):
-    db_recipe = RecipeORM(restaurant_id=user.restaurant_id, name=recipe.name, description=recipe.description)
-    if recipe.food_item_ids:
-        items_result = await db.execute(
-            select(FoodItemORM).where(
-                FoodItemORM.id.in_(recipe.food_item_ids),
-                FoodItemORM.restaurant_id == user.restaurant_id,
-            )
-        )
-        db_recipe.items = items_result.scalars().all()
+    db_recipe = RecipeORM(
+        restaurant_id=user.restaurant_id,
+        name=recipe.name,
+        description=recipe.description,
+        category=recipe.category,
+    )
+    contains_ids = await _validate_allergen_ids(db, recipe.allergen_ids, user.restaurant_id)
+    mc_ids = await _validate_allergen_ids(db, recipe.may_contain_allergen_ids, user.restaurant_id)
+    db_recipe.allergen_links = [
+        RecipeAllergenORM(allergen_id=aid, certain=True) for aid in contains_ids
+    ] + [
+        RecipeAllergenORM(allergen_id=aid, certain=False) for aid in mc_ids
+    ]
     db.add(db_recipe)
     await db.commit()
-    await db.refresh(db_recipe)
-    # Eagerly load relationships after refresh
-    await db.refresh(db_recipe, ["items"])
-    for item in db_recipe.items:
-        await db.refresh(item, ["allergens"])
-    return _enrich_recipe(db_recipe)
+    await db.refresh(db_recipe, ["allergen_links"])
+    for link in db_recipe.allergen_links:
+        await db.refresh(link, ["allergen"])
+    return _serialize_recipe(db_recipe)
 
 
 @app.put("/recipes/{recipe_id}", response_model=RecipeOut)
@@ -316,7 +379,7 @@ async def update_recipe(
     result = await db.execute(
         select(RecipeORM)
         .where(RecipeORM.id == recipe_id, RecipeORM.restaurant_id == user.restaurant_id)
-        .options(selectinload(RecipeORM.items).selectinload(FoodItemORM.allergens))
+        .options(selectinload(RecipeORM.allergen_links).selectinload(RecipeAllergenORM.allergen))
     )
     recipe = result.scalar_one_or_none()
     if not recipe:
@@ -325,19 +388,31 @@ async def update_recipe(
         recipe.name = data.name
     if data.description is not None:
         recipe.description = data.description
-    if data.food_item_ids is not None:
-        items_result = await db.execute(
-            select(FoodItemORM).where(
-                FoodItemORM.id.in_(data.food_item_ids),
-                FoodItemORM.restaurant_id == user.restaurant_id,
-            )
+    if data.category is not None:
+        recipe.category = data.category
+    if data.allergen_ids is not None or data.may_contain_allergen_ids is not None:
+        new_contains = (
+            data.allergen_ids
+            if data.allergen_ids is not None
+            else [link.allergen_id for link in recipe.allergen_links if link.certain]
         )
-        recipe.items = items_result.scalars().all()
+        new_may_contain = (
+            data.may_contain_allergen_ids
+            if data.may_contain_allergen_ids is not None
+            else [link.allergen_id for link in recipe.allergen_links if not link.certain]
+        )
+        contains_ids = await _validate_allergen_ids(db, new_contains, user.restaurant_id)
+        mc_ids = await _validate_allergen_ids(db, new_may_contain, user.restaurant_id)
+        recipe.allergen_links = [
+            RecipeAllergenORM(allergen_id=aid, certain=True) for aid in contains_ids
+        ] + [
+            RecipeAllergenORM(allergen_id=aid, certain=False) for aid in mc_ids
+        ]
     await db.commit()
-    await db.refresh(recipe, ["items"])
-    for item in recipe.items:
-        await db.refresh(item, ["allergens"])
-    return _enrich_recipe(recipe)
+    await db.refresh(recipe, ["allergen_links"])
+    for link in recipe.allergen_links:
+        await db.refresh(link, ["allergen"])
+    return _serialize_recipe(recipe)
 
 
 @app.get("/recipes/{recipe_id}", response_model=RecipeOut)
@@ -349,12 +424,12 @@ async def read_recipe(
     result = await db.execute(
         select(RecipeORM)
         .where(RecipeORM.id == recipe_id, RecipeORM.restaurant_id == user.restaurant_id)
-        .options(selectinload(RecipeORM.items).selectinload(FoodItemORM.allergens))
+        .options(selectinload(RecipeORM.allergen_links).selectinload(RecipeAllergenORM.allergen))
     )
     recipe = result.scalar_one_or_none()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    return _enrich_recipe(recipe)
+    return _serialize_recipe(recipe)
 
 
 @app.delete("/recipes/{recipe_id}")
@@ -374,40 +449,6 @@ async def delete_recipe(
     return {"detail": "Recipe deleted"}
 
 
-def _enrich_recipe(recipe: RecipeORM) -> dict:
-    allergen_map: dict[str, dict] = {}
-    for item in recipe.items:
-        seen_in_item = set()
-        for a, certain in [(a, True) for a in item.allergens] + [(a, False) for a in item.may_contain_allergens]:
-            if a.name not in seen_in_item:
-                seen_in_item.add(a.name)
-                if a.name not in allergen_map:
-                    allergen_map[a.name] = {"name": a.name, "count": 0, "items": set(), "certain": False}
-                allergen_map[a.name]["count"] += 1
-                allergen_map[a.name]["items"].add(item.name)
-                allergen_map[a.name]["certain"] = allergen_map[a.name]["certain"] or certain
-    return {
-        "id": recipe.id,
-        "name": recipe.name,
-        "description": recipe.description,
-        "items": [{
-            "id": item.id,
-            "name": item.name,
-            "description": item.description,
-            "category": item.category,
-            "image_path": item.image_path,
-            "allergens": [{"id": a.id, "name": a.name, "description": a.description} for a in item.allergens],
-            "may_contain_allergens": [
-                {"id": a.id, "name": a.name, "description": a.description} for a in item.may_contain_allergens
-            ],
-        } for item in recipe.items],
-        "allergens": [
-            {"name": v["name"], "count": v["count"], "items": sorted(v["items"]), "certain": v["certain"]}
-            for v in sorted(allergen_map.values(), key=lambda x: -x["count"])
-        ],
-    }
-
-
 @app.get("/food-items/{item_id}", response_model=FoodItemOut)
 async def read_food_item(
     item_id: int,
@@ -417,12 +458,12 @@ async def read_food_item(
     result = await db.execute(
         select(FoodItemORM)
         .where(FoodItemORM.id == item_id, FoodItemORM.restaurant_id == user.restaurant_id)
-        .options(selectinload(FoodItemORM.allergens))
+        .options(selectinload(FoodItemORM.allergen_links).selectinload(FoodItemAllergenORM.allergen))
     )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Food item not found")
-    return item
+    return _serialize_food_item(item)
 
 
 @app.put("/food-items/{item_id}", response_model=FoodItemOut)
@@ -435,7 +476,7 @@ async def update_food_item(
     result = await db.execute(
         select(FoodItemORM)
         .where(FoodItemORM.id == item_id, FoodItemORM.restaurant_id == user.restaurant_id)
-        .options(selectinload(FoodItemORM.allergens))
+        .options(selectinload(FoodItemORM.allergen_links).selectinload(FoodItemAllergenORM.allergen))
     )
     db_food = result.scalar_one_or_none()
     if not db_food:
@@ -449,26 +490,30 @@ async def update_food_item(
         db_food.category = food.category
     if food.image_path is not None:
         db_food.image_path = food.image_path
-    if food.allergen_ids is not None:
-        allergens_result = await db.execute(
-            select(AllergenORM).where(
-                AllergenORM.id.in_(food.allergen_ids),
-                AllergenORM.restaurant_id == user.restaurant_id,
-            )
+    if food.allergen_ids is not None or food.may_contain_allergen_ids is not None:
+        new_contains = (
+            food.allergen_ids
+            if food.allergen_ids is not None
+            else [link.allergen_id for link in db_food.allergen_links if link.certain]
         )
-        db_food.allergens = allergens_result.scalars().all()
-    if food.may_contain_allergen_ids is not None:
-        may_contain_result = await db.execute(
-            select(AllergenORM).where(
-                AllergenORM.id.in_(food.may_contain_allergen_ids),
-                AllergenORM.restaurant_id == user.restaurant_id,
-            )
+        new_may_contain = (
+            food.may_contain_allergen_ids
+            if food.may_contain_allergen_ids is not None
+            else [link.allergen_id for link in db_food.allergen_links if not link.certain]
         )
-        db_food.may_contain_allergens = may_contain_result.scalars().all()
+        contains_ids = await _validate_allergen_ids(db, new_contains, user.restaurant_id)
+        mc_ids = await _validate_allergen_ids(db, new_may_contain, user.restaurant_id)
+        db_food.allergen_links = [
+            FoodItemAllergenORM(allergen_id=aid, certain=True) for aid in contains_ids
+        ] + [
+            FoodItemAllergenORM(allergen_id=aid, certain=False) for aid in mc_ids
+        ]
 
     await db.commit()
-    await db.refresh(db_food)
-    return db_food
+    await db.refresh(db_food, ["allergen_links"])
+    for link in db_food.allergen_links:
+        await db.refresh(link, ["allergen"])
+    return _serialize_food_item(db_food)
 
 
 @app.post("/food-items", response_model=FoodItemOut)
@@ -484,26 +529,19 @@ async def create_food_item(
         category=food.category,
         image_path=food.image_path,
     )
-    if food.allergen_ids:
-        allergens_result = await db.execute(
-            select(AllergenORM).where(
-                AllergenORM.id.in_(food.allergen_ids),
-                AllergenORM.restaurant_id == user.restaurant_id,
-            )
-        )
-        db_food.allergens = allergens_result.scalars().all()
-    if food.may_contain_allergen_ids:
-        may_contain_result = await db.execute(
-            select(AllergenORM).where(
-                AllergenORM.id.in_(food.may_contain_allergen_ids),
-                AllergenORM.restaurant_id == user.restaurant_id,
-            )
-        )
-        db_food.may_contain_allergens = may_contain_result.scalars().all()
+    contains_ids = await _validate_allergen_ids(db, food.allergen_ids, user.restaurant_id)
+    mc_ids = await _validate_allergen_ids(db, food.may_contain_allergen_ids, user.restaurant_id)
+    db_food.allergen_links = [
+        FoodItemAllergenORM(allergen_id=aid, certain=True) for aid in contains_ids
+    ] + [
+        FoodItemAllergenORM(allergen_id=aid, certain=False) for aid in mc_ids
+    ]
     db.add(db_food)
     await db.commit()
-    await db.refresh(db_food)
-    return db_food
+    await db.refresh(db_food, ["allergen_links"])
+    for link in db_food.allergen_links:
+        await db.refresh(link, ["allergen"])
+    return _serialize_food_item(db_food)
 
 
 @app.delete("/food-items/{item_id}")

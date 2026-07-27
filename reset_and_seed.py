@@ -13,7 +13,7 @@ async def reset():
     await init_db()
     async with engine.begin() as conn:
         await conn.execute(text(
-            "TRUNCATE TABLE food_allergen_association, recipe_items, food_items, "
+            "TRUNCATE TABLE food_item_allergens, recipe_allergens, food_items, "
             "recipes, allergens, users, restaurants RESTART IDENTITY CASCADE"
         ))
     print("Tables truncated.")

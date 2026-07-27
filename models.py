@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum, Table, UniqueConstraint, func
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, Enum, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 import enum
 
@@ -33,28 +33,6 @@ class UserORM(Base):
     restaurant = relationship("RestaurantORM", back_populates="users")
 
 
-food_allergen_association = Table(
-    "food_allergen_association",
-    Base.metadata,
-    Column("food_item_id", Integer, ForeignKey("food_items.id"), primary_key=True),
-    Column("allergen_id", Integer, ForeignKey("allergens.id"), primary_key=True),
-)
-
-food_allergen_may_contain_association = Table(
-    "food_allergen_may_contain_association",
-    Base.metadata,
-    Column("food_item_id", Integer, ForeignKey("food_items.id"), primary_key=True),
-    Column("allergen_id", Integer, ForeignKey("allergens.id"), primary_key=True),
-)
-
-recipe_items_association = Table(
-    "recipe_items",
-    Base.metadata,
-    Column("recipe_id", Integer, ForeignKey("recipes.id"), primary_key=True),
-    Column("food_item_id", Integer, ForeignKey("food_items.id"), primary_key=True),
-)
-
-
 class AllergenORM(Base):
     __tablename__ = "allergens"
 
@@ -64,6 +42,28 @@ class AllergenORM(Base):
     description = Column(String, nullable=True)
 
     __table_args__ = (UniqueConstraint("restaurant_id", "name", name="uq_allergen_restaurant_name"),)
+
+
+class FoodItemAllergenORM(Base):
+    __tablename__ = "food_item_allergens"
+
+    food_item_id = Column(Integer, ForeignKey("food_items.id"), primary_key=True)
+    allergen_id = Column(Integer, ForeignKey("allergens.id"), primary_key=True)
+    certain = Column(Boolean, nullable=False, default=True)
+    note = Column(String, nullable=True)
+
+    allergen = relationship("AllergenORM", lazy="selectin")
+
+
+class RecipeAllergenORM(Base):
+    __tablename__ = "recipe_allergens"
+
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), primary_key=True)
+    allergen_id = Column(Integer, ForeignKey("allergens.id"), primary_key=True)
+    certain = Column(Boolean, nullable=False, default=True)
+    note = Column(String, nullable=True)
+
+    allergen = relationship("AllergenORM", lazy="selectin")
 
 
 class FoodItemORM(Base):
@@ -76,14 +76,9 @@ class FoodItemORM(Base):
     category = Column(String, nullable=True)
     image_path = Column(String, nullable=True)
 
-    allergens = relationship(
-        "AllergenORM",
-        secondary=food_allergen_association,
-        lazy="selectin",
-    )
-    may_contain_allergens = relationship(
-        "AllergenORM",
-        secondary=food_allergen_may_contain_association,
+    allergen_links = relationship(
+        "FoodItemAllergenORM",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
 
@@ -95,9 +90,10 @@ class RecipeORM(Base):
     restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
     description = Column(String, nullable=True)
+    category = Column(String, nullable=True)
 
-    items = relationship(
-        "FoodItemORM",
-        secondary=recipe_items_association,
+    allergen_links = relationship(
+        "RecipeAllergenORM",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )

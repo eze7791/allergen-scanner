@@ -110,11 +110,19 @@ final class APIClient {
         try await get("/recipes")
     }
 
-    func createRecipe(name: String, description: String?, foodItemIds: [Int]) async throws -> Recipe {
+    func createRecipe(
+        name: String,
+        description: String?,
+        category: String?,
+        allergenIds: [Int],
+        mayContainAllergenIds: [Int]
+    ) async throws -> Recipe {
         try await post("/recipes", body: [
             "name": name,
             "description": description as Any,
-            "food_item_ids": foodItemIds,
+            "category": category as Any,
+            "allergen_ids": allergenIds,
+            "may_contain_allergen_ids": mayContainAllergenIds,
         ])
     }
 

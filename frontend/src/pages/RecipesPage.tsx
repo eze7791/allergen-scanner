@@ -1,64 +1,66 @@
 import { useState, useEffect } from "react"
-import { getRecipes, createRecipe, deleteRecipe, getFoodItems, type FoodItem, type Recipe } from "@/api"
+import { getRecipes, createRecipe, deleteRecipe, getAllergens, type Allergen, type Recipe } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { AllergenBadges, AllergenPicker } from "@/components/AllergenPicker"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { Loader2, Plus, Trash2, X } from "lucide-react"
+import { Loader2, Plus, Trash2 } from "lucide-react"
 
 export default function RecipesPage() {
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
-  const [foodItems, setFoodItems] = useState<FoodItem[]>([])
+  const [category, setCategory] = useState("")
+  const [allergens, setAllergens] = useState<Allergen[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [recipe, setRecipe] = useState<Recipe | null>(null)
+  const [mcSelectedIds, setMcSelectedIds] = useState<Set<number>>(new Set())
+  const [recipes, setRecipes] = useState<Recipe[]>([])
   const [loading, setLoading] = useState(false)
-  const [itemSearch, setItemSearch] = useState("")
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Recipe | null>(null)
 
   useEffect(() => {
-    getFoodItems().then(setFoodItems)
-    loadLatest()
+    getAllergens().then(setAllergens)
+    loadRecipes()
   }, [])
 
-  const loadLatest = async () => {
+  const loadRecipes = async () => {
     try {
-      const recipes = await getRecipes()
-      setRecipe(recipes.length ? recipes[recipes.length - 1] : null)
+      setRecipes(await getRecipes())
     } catch {
-      setRecipe(null)
+      setRecipes([])
     }
   }
 
-  const toggleItem = (id: number) => {
-    setSelectedIds((prev) => {
+  const toggle = (setter: typeof setSelectedIds) => (id: number) =>
+    setter((prev) => {
       const s = new Set(prev)
       if (s.has(id)) s.delete(id)
       else s.add(id)
       return s
     })
-  }
 
   const create = async () => {
-    if (!name.trim() || selectedIds.size === 0) return
+    if (!name.trim()) return
     setLoading(true)
     try {
       const r = await createRecipe({
         name: name.trim(),
         description: desc.trim() || undefined,
-        food_item_ids: Array.from(selectedIds),
+        category: category.trim() || undefined,
+        allergen_ids: Array.from(selectedIds),
+        may_contain_allergen_ids: Array.from(mcSelectedIds),
       })
-      setRecipe(r)
+      setRecipes((prev) => [r, ...prev])
       setName("")
       setDesc("")
+      setCategory("")
       setSelectedIds(new Set())
-      setItemSearch("")
-      toast.success("Recipe created!")
+      setMcSelectedIds(new Set())
+      toast.success("Dish created!")
     } catch (err) {
       toast.error("Error", { description: (err as Error).message })
     } finally {
@@ -67,37 +69,44 @@ export default function RecipesPage() {
   }
 
   const handleDelete = async () => {
-    if (!recipe) return
+    if (!deleteTarget) return
     try {
-      await deleteRecipe(recipe.id)
-      setRecipe(null)
-      setDeleteOpen(false)
-      toast.success("Recipe deleted")
+      await deleteRecipe(deleteTarget.id)
+      setRecipes((prev) => prev.filter((r) => r.id !== deleteTarget.id))
+      setDeleteTarget(null)
+      toast.success("Dish deleted")
     } catch (err) {
       toast.error("Error", { description: (err as Error).message })
     }
   }
 
-  const filteredItems = foodItems.filter(
-    (i) => i.name.toLowerCase().includes(itemSearch.toLowerCase())
-  )
+  const grouped = recipes.reduce<Record<string, Recipe[]>>((acc, r) => {
+    const key = r.category || "Uncategorized"
+    ;(acc[key] ??= []).push(r)
+    return acc
+  }, {})
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Recipes</h1>
-        <p className="text-sm text-muted-foreground mt-1">Create recipes by combining products</p>
+        <h1 className="text-xl font-semibold tracking-tight">Dishes</h1>
+        <p className="text-sm text-muted-foreground mt-1">Manage the menu and each dish's allergens</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Create Recipe</CardTitle>
-          <CardDescription>Combine food items into a recipe to see combined allergens</CardDescription>
+          <CardTitle className="text-base">Add Dish</CardTitle>
+          <CardDescription>Tag a menu item with the allergens it contains or may contain</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Recipe name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mac & Cheese" />
+            <Label htmlFor="name">Dish name</Label>
+            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Oklahoma Stack" />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="category">Category (optional)</Label>
+            <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Burgers" />
           </div>
 
           <div className="space-y-2">
@@ -106,114 +115,70 @@ export default function RecipesPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>Ingredients</Label>
-            <Input
-              value={itemSearch}
-              onChange={(e) => setItemSearch(e.target.value)}
-              placeholder="Search ingredients..."
-              className="mb-2"
-            />
-            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-              {filteredItems.map((i) => (
-                <Badge
-                  key={i.id}
-                  variant={selectedIds.has(i.id) ? "default" : "outline"}
-                  className="cursor-pointer select-none"
-                  onClick={() => toggleItem(i.id)}
-                >
-                  {i.name}
-                  {selectedIds.has(i.id) && <X className="ml-1 h-3 w-3" />}
-                </Badge>
-              ))}
-            </div>
-            {selectedIds.size > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {selectedIds.size} ingredient{selectedIds.size > 1 ? "s" : ""} selected
-              </p>
-            )}
+            <Label>Contains</Label>
+            <AllergenPicker allergens={allergens} selectedIds={selectedIds} onToggle={toggle(setSelectedIds)} />
+          </div>
+
+          <div className="space-y-2">
+            <Label>May contain</Label>
+            <AllergenPicker allergens={allergens} selectedIds={mcSelectedIds} onToggle={toggle(setMcSelectedIds)} />
           </div>
         </CardContent>
         <CardFooter>
-          <Button
-            onClick={create}
-            disabled={!name.trim() || selectedIds.size === 0 || loading}
-            className="w-full gap-2"
-          >
+          <Button onClick={create} disabled={!name.trim() || loading} className="w-full gap-2">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {loading ? "Creating..." : "Create Recipe"}
+            {loading ? "Creating..." : "Add Dish"}
           </Button>
         </CardFooter>
       </Card>
 
-      {recipe ? (
-        <Card className="border-l-4 border-l-emerald-500">
-          <CardHeader className="flex flex-row items-start justify-between">
-            <div>
-              <CardTitle className="text-base">{recipe.name}</CardTitle>
-              {recipe.description && (
-                <CardDescription>{recipe.description}</CardDescription>
-              )}
-            </div>
-            <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-              <DialogTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0" />}>
-                <Trash2 className="h-4 w-4" />
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Delete recipe?</DialogTitle>
-                  <DialogDescription>
-                    Are you sure you want to delete "{recipe.name}"?
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-                  <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-xs text-muted-foreground font-medium">Ingredients</Label>
-              <p className="text-sm mt-1">
-                {recipe.items.map((i) => i.name).join(", ")}
-              </p>
-            </div>
-            <Separator />
-            <div>
-              <Label className="text-xs text-muted-foreground font-medium">Combined Allergens</Label>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {recipe.allergens.length === 0 ? (
-                  <Badge variant="secondary">No allergens</Badge>
-                ) : (
-                  recipe.allergens.map((a) => (
-                    <Badge key={a.name} variant="outline" className="px-2.5 py-1.5 h-auto flex-col items-start gap-0">
-                      <span className="text-xs font-medium">
-                        {a.name}
-                        <span className="ml-1 text-[10px] text-muted-foreground font-normal">
-                          {a.count}x
-                        </span>
-                      </span>
-                      <span className="text-[10px] text-muted-foreground leading-tight">
-                        {a.items.join(", ")}
-                      </span>
-                    </Badge>
-                  ))
-                )}
-              </div>
-              {recipe.allergens.length > 0 && (
-                <p className="text-[10px] text-muted-foreground/60 mt-2 leading-tight">
-                  To remove allergens, edit or delete the source product
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {recipes.length === 0 ? (
+        <div className="py-12 text-center text-sm text-muted-foreground">No dishes yet. Add one above.</div>
       ) : (
-        <div className="py-12 text-center text-sm text-muted-foreground">
-          No recipes yet. Create one above.
-        </div>
+        Object.entries(grouped).map(([cat, items]) => (
+          <div key={cat} className="space-y-2">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{cat}</h2>
+            {items.map((r) => (
+              <Card key={r.id} className="group">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <h3 className="text-sm font-medium">{r.name}</h3>
+                      {r.description && <p className="text-xs text-muted-foreground">{r.description}</p>}
+                      <AllergenBadges allergens={r.allergens} variant="contains" />
+                      <AllergenBadges allergens={r.may_contain_allergens} variant="may" />
+                      {r.allergens.length === 0 && r.may_contain_allergens.length === 0 && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">None</Badge>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground opacity-100 hover:text-destructive md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                      onClick={() => setDeleteTarget(r)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ))
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete dish?</DialogTitle>
+            <DialogDescription>Are you sure you want to delete "{deleteTarget?.name}"?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

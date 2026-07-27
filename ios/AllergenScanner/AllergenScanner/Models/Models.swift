@@ -9,6 +9,7 @@ struct Allergen: Codable, Identifiable, Hashable {
     let id: Int
     var name: String
     var description: String?
+    var note: String?
 }
 
 struct FoodItem: Codable, Identifiable, Hashable {
@@ -31,8 +32,14 @@ struct Recipe: Codable, Identifiable, Hashable {
     let id: Int
     var name: String
     var description: String?
-    var items: [FoodItem]
-    var allergens: [RecipeAllergenSummary]
+    var category: String?
+    var allergens: [Allergen]
+    var mayContainAllergens: [Allergen]
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, category, allergens
+        case mayContainAllergens = "may_contain_allergens"
+    }
 }
 
 struct AuthSession: Codable {
@@ -64,12 +71,4 @@ struct ScanResult: Codable {
         case detectedAllergens = "detected_allergens"
         case allAllergens = "all_allergens"
     }
-}
-
-struct RecipeAllergenSummary: Codable, Identifiable, Hashable {
-    var id: String { name }
-    let name: String
-    let count: Int
-    let items: [String]
-    let certain: Bool
 }

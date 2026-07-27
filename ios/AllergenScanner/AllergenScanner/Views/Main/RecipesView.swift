@@ -4,7 +4,7 @@ struct RecipesView: View {
     @Environment(APIClient.self) private var api
 
     @State private var recipes: [Recipe] = []
-    @State private var foodItems: [FoodItem] = []
+    @State private var allergens: [Allergen] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingAddSheet = false
@@ -14,7 +14,7 @@ struct RecipesView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Recipes")
+                .navigationTitle("Dishes")
                 .toolbar {
                     if isAdmin {
                         ToolbarItem(placement: .topBarTrailing) {
@@ -27,7 +27,7 @@ struct RecipesView: View {
                     }
                 }
                 .sheet(isPresented: $showingAddSheet) {
-                    AddRecipeSheet(foodItems: foodItems) { await load() }
+                    AddRecipeSheet(allergens: allergens) { await load() }
                 }
                 .task { await load() }
                 .refreshable { await load() }
@@ -39,31 +39,29 @@ struct RecipesView: View {
         if isLoading && recipes.isEmpty {
             ProgressView()
         } else if let errorMessage, recipes.isEmpty {
-            ContentUnavailableView("Couldn't load recipes", systemImage: "wifi.slash", description: Text(errorMessage))
+            ContentUnavailableView("Couldn't load dishes", systemImage: "wifi.slash", description: Text(errorMessage))
         } else if recipes.isEmpty {
-            ContentUnavailableView("No recipes yet", systemImage: "list.bullet.rectangle")
+            ContentUnavailableView("No dishes yet", systemImage: "list.bullet.rectangle")
         } else {
             List {
                 ForEach(recipes) { recipe in
-                    NavigationLink(value: recipe) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(recipe.name).font(.headline)
-                            Text("\(recipe.items.count) item(s)")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(recipe.name).font(.headline)
+                        if let category = recipe.category, !category.isEmpty {
+                            Text(category)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            if !recipe.allergens.isEmpty {
-                                Text(recipe.allergens.map(\.name).joined(separator: ", "))
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(recipe.allergens.contains { $0.certain } ? .orange : .yellow)
-                            }
                         }
-                        .padding(.vertical, 4)
+                        if !recipe.allergens.isEmpty {
+                            AllergenChipsRow(allergens: recipe.allergens, style: .certain)
+                        }
+                        if !recipe.mayContainAllergens.isEmpty {
+                            AllergenChipsRow(allergens: recipe.mayContainAllergens, style: .mayContain)
+                        }
                     }
+                    .padding(.vertical, 4)
                 }
                 .onDelete(perform: isAdmin ? delete : nil)
-            }
-            .navigationDestination(for: Recipe.self) { recipe in
-                RecipeDetailView(recipe: recipe)
             }
         }
     }
@@ -74,9 +72,9 @@ struct RecipesView: View {
         defer { isLoading = false }
         do {
             async let recipesTask = api.fetchRecipes()
-            async let itemsTask = api.fetchFoodItems()
+            async let allergensTask = api.fetchAllergens()
             recipes = try await recipesTask.sorted { $0.name < $1.name }
-            foodItems = try await itemsTask.sorted { $0.name < $1.name }
+            allergens = try await allergensTask.sorted { $0.name < $1.name }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -93,57 +91,17 @@ struct RecipesView: View {
     }
 }
 
-private struct RecipeDetailView: View {
-    let recipe: Recipe
-
-    var body: some View {
-        List {
-            Section("Items") {
-                ForEach(recipe.items) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.name)
-                        if !item.allergens.isEmpty {
-                            AllergenChipsRow(allergens: item.allergens, style: .certain)
-                        }
-                        if !item.mayContainAllergens.isEmpty {
-                            AllergenChipsRow(allergens: item.mayContainAllergens, style: .mayContain)
-                        }
-                    }
-                }
-            }
-            if !recipe.allergens.isEmpty {
-                Section("Allergen summary") {
-                    ForEach(recipe.allergens) { summary in
-                        VStack(alignment: .leading) {
-                            HStack {
-                                Text(summary.name).font(.headline)
-                                if !summary.certain {
-                                    Text("may contain")
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.yellow)
-                                }
-                            }
-                            Text("In: \(summary.items.joined(separator: ", "))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle(recipe.name)
-    }
-}
-
 private struct AddRecipeSheet: View {
     @Environment(APIClient.self) private var api
     @Environment(\.dismiss) private var dismiss
-    let foodItems: [FoodItem]
+    let allergens: [Allergen]
     let onSaved: () async -> Void
 
     @State private var name = ""
     @State private var description = ""
-    @State private var selectedItemIds: Set<Int> = []
+    @State private var category = ""
+    @State private var selectedAllergenIds: Set<Int> = []
+    @State private var selectedMayContainIds: Set<Int> = []
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -153,16 +111,17 @@ private struct AddRecipeSheet: View {
                 Section {
                     TextField("Name", text: $name)
                     TextField("Description (optional)", text: $description)
+                    TextField("Category (optional)", text: $category)
                 }
-                Section("Includes") {
-                    ForEach(foodItems) { item in
+                Section("Contains") {
+                    ForEach(allergens) { allergen in
                         Button {
-                            toggle(item.id)
+                            toggle(allergen.id, in: &selectedAllergenIds, removingFrom: &selectedMayContainIds)
                         } label: {
                             HStack {
-                                Text(item.name)
+                                Text(allergen.name)
                                 Spacer()
-                                if selectedItemIds.contains(item.id) {
+                                if selectedAllergenIds.contains(allergen.id) {
                                     Image(systemName: "checkmark")
                                 }
                             }
@@ -170,11 +129,29 @@ private struct AddRecipeSheet: View {
                         .tint(.primary)
                     }
                 }
+                Section {
+                    ForEach(allergens) { allergen in
+                        Button {
+                            toggle(allergen.id, in: &selectedMayContainIds, removingFrom: &selectedAllergenIds)
+                        } label: {
+                            HStack {
+                                Text(allergen.name)
+                                Spacer()
+                                if selectedMayContainIds.contains(allergen.id) {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        .tint(.primary)
+                    }
+                } header: {
+                    Text("May contain")
+                }
                 if let errorMessage {
                     Text(errorMessage).foregroundStyle(.red)
                 }
             }
-            .navigationTitle("New Recipe")
+            .navigationTitle("New Dish")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -187,11 +164,12 @@ private struct AddRecipeSheet: View {
         }
     }
 
-    private func toggle(_ id: Int) {
-        if selectedItemIds.contains(id) {
-            selectedItemIds.remove(id)
+    private func toggle(_ id: Int, in set: inout Set<Int>, removingFrom other: inout Set<Int>) {
+        if set.contains(id) {
+            set.remove(id)
         } else {
-            selectedItemIds.insert(id)
+            set.insert(id)
+            other.remove(id)
         }
     }
 
@@ -203,7 +181,9 @@ private struct AddRecipeSheet: View {
             _ = try await api.createRecipe(
                 name: name,
                 description: description.isEmpty ? nil : description,
-                foodItemIds: Array(selectedItemIds)
+                category: category.isEmpty ? nil : category,
+                allergenIds: Array(selectedAllergenIds),
+                mayContainAllergenIds: Array(selectedMayContainIds)
             )
             await onSaved()
             dismiss()
