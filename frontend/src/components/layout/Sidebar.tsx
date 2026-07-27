@@ -2,12 +2,13 @@ import { type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 import { Link, useLocation } from "react-router-dom"
-import { LogOut, Scan, Search, Utensils } from "lucide-react"
+import { LogOut, Scan, Search, TriangleAlert, Utensils } from "lucide-react"
 import { clearSession, getSession } from "@/api"
 
 const navItems: { label: string; to: string; icon: LucideIcon; adminOnly?: boolean }[] = [
   { label: "Search", to: "/", icon: Search },
   { label: "Recipes", to: "/recipes", icon: Utensils },
+  { label: "Allergens", to: "/allergens", icon: TriangleAlert, adminOnly: true },
   { label: "Scan", to: "/scan", icon: Scan, adminOnly: true },
 ]
 

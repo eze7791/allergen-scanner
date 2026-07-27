@@ -131,30 +131,49 @@ def load_dishes(path: str) -> list[tuple[str, str, list[tuple[str, bool, str | N
     return dishes
 
 
-async def get_or_create_restaurant(db, name: str, admin_pin: str) -> RestaurantORM:
+async def get_or_create_restaurant(db, name: str, admin_username: str, admin_password: str) -> RestaurantORM:
     result = await db.execute(select(RestaurantORM).where(RestaurantORM.name == name))
     restaurant = result.scalar_one_or_none()
     if restaurant:
-        # Re-running the import resets the admin PIN to the one provided, so
-        # re-imports always leave you with a known-good admin credential.
-        restaurant.admin_pin_hash = hash_pin(admin_pin)
+        # Re-running the import resets the admin credential to the one provided,
+        # so re-imports always leave you with a known-good admin login.
+        admin_result = await db.execute(
+            select(UserORM).where(UserORM.restaurant_id == restaurant.id, UserORM.role == UserRole.admin).limit(1)
+        )
+        admin = admin_result.scalar_one_or_none()
+        if admin:
+            admin.username = admin_username
+            admin.password_hash = hash_pin(admin_password)
+        else:
+            admin = UserORM(
+                restaurant_id=restaurant.id,
+                role=UserRole.admin,
+                username=admin_username,
+                password_hash=hash_pin(admin_password),
+            )
+            db.add(admin)
         await db.commit()
         return restaurant
 
-    restaurant = RestaurantORM(name=name, join_code=generate_join_code(), admin_pin_hash=hash_pin(admin_pin))
+    restaurant = RestaurantORM(name=name, join_code=generate_join_code())
     db.add(restaurant)
     await db.commit()
     await db.refresh(restaurant)
 
-    admin = UserORM(restaurant_id=restaurant.id, role=UserRole.admin)
+    admin = UserORM(
+        restaurant_id=restaurant.id,
+        role=UserRole.admin,
+        username=admin_username,
+        password_hash=hash_pin(admin_password),
+    )
     db.add(admin)
     await db.commit()
     return restaurant
 
 
-async def import_menu(path: str, restaurant_name: str, admin_pin: str):
+async def import_menu(path: str, restaurant_name: str, admin_username: str, admin_password: str):
     async with async_session() as db:
-        restaurant = await get_or_create_restaurant(db, restaurant_name, admin_pin)
+        restaurant = await get_or_create_restaurant(db, restaurant_name, admin_username, admin_password)
         await seed_allergens(restaurant.id)
 
         allergen_result = await db.execute(
@@ -206,7 +225,8 @@ async def import_menu(path: str, restaurant_name: str, admin_pin: str):
 
         print(f"Restaurant: {restaurant.name} (id={restaurant.id})")
         print(f"  join_code: {restaurant.join_code}")
-        print(f"  admin_pin: {admin_pin}")
+        print(f"  admin_username: {admin_username}")
+        print(f"  admin_password: {admin_password}")
         print(f"Imported {len(products)} products, {len(dishes)} dishes.")
 
 
@@ -214,6 +234,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("xlsx_path")
     parser.add_argument("--restaurant-name", default="BrewDog")
-    parser.add_argument("--admin-pin", required=True)
+    parser.add_argument("--admin-username", required=True)
+    parser.add_argument("--admin-password", required=True)
     args = parser.parse_args()
-    asyncio.run(import_menu(args.xlsx_path, args.restaurant_name, args.admin_pin))
+    asyncio.run(import_menu(args.xlsx_path, args.restaurant_name, args.admin_username, args.admin_password))

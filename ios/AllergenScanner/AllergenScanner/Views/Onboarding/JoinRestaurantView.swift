@@ -13,7 +13,7 @@ struct JoinRestaurantView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            TextField("Join code (e.g. REST-1234)", text: $joinCode)
+            TextField("Join code (ask your admin)", text: $joinCode)
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()

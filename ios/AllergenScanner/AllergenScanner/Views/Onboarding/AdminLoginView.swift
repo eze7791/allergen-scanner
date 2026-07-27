@@ -3,25 +3,24 @@ import SwiftUI
 struct AdminLoginView: View {
     @Environment(APIClient.self) private var api
 
-    @State private var joinCode = ""
-    @State private var adminPin = ""
+    @State private var username = ""
+    @State private var password = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Already an admin on another device? Log in here with your restaurant's join code and admin PIN.")
+            Text("Already an admin on another device? Log in here with your personal admin username and password.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            TextField("Join code (e.g. REST-1234)", text: $joinCode)
+            TextField("Admin username", text: $username)
                 .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.characters)
+                .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
-            SecureField("Admin PIN", text: $adminPin)
+            SecureField("Admin password", text: $password)
                 .textFieldStyle(.roundedBorder)
-                .keyboardType(.numberPad)
 
             if let errorMessage {
                 Text(errorMessage)
@@ -41,7 +40,7 @@ struct AdminLoginView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(joinCode.isEmpty || adminPin.isEmpty || isLoading)
+            .disabled(username.isEmpty || password.isEmpty || isLoading)
         }
     }
 
@@ -50,7 +49,7 @@ struct AdminLoginView: View {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            api.session = try await api.adminLogin(joinCode: joinCode, adminPin: adminPin)
+            api.session = try await api.adminLogin(username: username, password: password)
         } catch {
             errorMessage = error.localizedDescription
         }

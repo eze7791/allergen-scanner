@@ -6,7 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import init_db
@@ -53,6 +53,11 @@ class AllergenBase(BaseModel):
 
 class AllergenCreate(AllergenBase):
     pass
+
+
+class AllergenUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 
 class AllergenOut(AllergenBase):
@@ -130,7 +135,8 @@ class RecipeOut(BaseModel):
 
 class RestaurantCreate(BaseModel):
     name: str
-    admin_pin: str
+    admin_username: str
+    admin_password: str
 
 
 class RestaurantAuthOut(BaseModel):
@@ -146,8 +152,8 @@ class RestaurantJoin(BaseModel):
 
 
 class AdminLogin(BaseModel):
-    join_code: str
-    admin_pin: str
+    username: str
+    password: str
 
 
 class ScanTextRequest(BaseModel):
@@ -159,15 +165,29 @@ async def on_startup():
     await init_db()
 
 
+def _normalize_username(username: str) -> str:
+    return username.strip().lower()
+
+
 @app.post("/restaurants", response_model=RestaurantAuthOut)
 async def create_restaurant(data: RestaurantCreate, db: AsyncSession = Depends(get_db)):
+    username = _normalize_username(data.admin_username)
+    existing = await db.execute(select(UserORM).where(UserORM.username == username))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="That admin username is already taken")
+
     join_code = generate_join_code()
-    restaurant = RestaurantORM(name=data.name, join_code=join_code, admin_pin_hash=hash_pin(data.admin_pin))
+    restaurant = RestaurantORM(name=data.name, join_code=join_code)
     db.add(restaurant)
     await db.commit()
     await db.refresh(restaurant)
 
-    admin_user = UserORM(restaurant_id=restaurant.id, role=UserRole.admin)
+    admin_user = UserORM(
+        restaurant_id=restaurant.id,
+        role=UserRole.admin,
+        username=username,
+        password_hash=hash_pin(data.admin_password),
+    )
     db.add(admin_user)
     await db.commit()
     await db.refresh(admin_user)
@@ -208,22 +228,15 @@ async def join_restaurant(data: RestaurantJoin, db: AsyncSession = Depends(get_d
 
 @app.post("/auth/admin-login", response_model=RestaurantAuthOut)
 async def admin_login(data: AdminLogin, db: AsyncSession = Depends(get_db)):
+    username = _normalize_username(data.username)
     result = await db.execute(
-        select(RestaurantORM).where(RestaurantORM.join_code == normalize_join_code(data.join_code))
-    )
-    restaurant = result.scalar_one_or_none()
-    if not restaurant or not verify_pin(data.admin_pin, restaurant.admin_pin_hash):
-        raise HTTPException(status_code=401, detail="Invalid join code or admin PIN")
-
-    result = await db.execute(
-        select(UserORM).where(UserORM.restaurant_id == restaurant.id, UserORM.role == UserRole.admin).limit(1)
+        select(UserORM).where(UserORM.username == username, UserORM.role == UserRole.admin)
     )
     admin_user = result.scalar_one_or_none()
-    if not admin_user:
-        admin_user = UserORM(restaurant_id=restaurant.id, role=UserRole.admin)
-        db.add(admin_user)
-        await db.commit()
-        await db.refresh(admin_user)
+    if not admin_user or not admin_user.password_hash or not verify_pin(data.password, admin_user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    restaurant = await db.get(RestaurantORM, admin_user.restaurant_id)
 
     token = create_access_token(admin_user.id, restaurant.id, UserRole.admin)
     return RestaurantAuthOut(
@@ -252,6 +265,39 @@ async def create_allergen(
     await db.commit()
     await db.refresh(db_allergen)
     return db_allergen
+
+
+@app.put("/allergens/{allergen_id}", response_model=AllergenOut)
+async def update_allergen(
+    allergen_id: int,
+    data: AllergenUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
+    db_allergen = await db.get(AllergenORM, allergen_id)
+    if not db_allergen or db_allergen.restaurant_id != user.restaurant_id:
+        raise HTTPException(status_code=404, detail="Allergen not found")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(db_allergen, field, value)
+    await db.commit()
+    await db.refresh(db_allergen)
+    return db_allergen
+
+
+@app.delete("/allergens/{allergen_id}")
+async def delete_allergen(
+    allergen_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: UserORM = Depends(require_admin),
+):
+    db_allergen = await db.get(AllergenORM, allergen_id)
+    if not db_allergen or db_allergen.restaurant_id != user.restaurant_id:
+        raise HTTPException(status_code=404, detail="Allergen not found")
+    await db.execute(delete(FoodItemAllergenORM).where(FoodItemAllergenORM.allergen_id == allergen_id))
+    await db.execute(delete(RecipeAllergenORM).where(RecipeAllergenORM.allergen_id == allergen_id))
+    await db.delete(db_allergen)
+    await db.commit()
+    return {"ok": True}
 
 
 def _split_allergen_links(links) -> tuple[list[dict], list[dict]]:

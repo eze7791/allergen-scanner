@@ -4,23 +4,28 @@ struct CreateRestaurantView: View {
     @Environment(APIClient.self) private var api
 
     @State private var name = ""
-    @State private var adminPin = ""
+    @State private var adminUsername = ""
+    @State private var adminPassword = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var createdSession: AuthSession?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Set up your restaurant and become its admin. You'll get a join code to share with your staff.")
+            Text("Set up your restaurant and your personal admin login. You'll get a join code to share with your staff.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             TextField("Restaurant name", text: $name)
                 .textFieldStyle(.roundedBorder)
 
-            SecureField("Admin PIN (you'll use this to log in on new devices)", text: $adminPin)
+            TextField("Admin username", text: $adminUsername)
                 .textFieldStyle(.roundedBorder)
-                .keyboardType(.numberPad)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            SecureField("Admin password", text: $adminPassword)
+                .textFieldStyle(.roundedBorder)
 
             if let errorMessage {
                 Text(errorMessage)
@@ -40,7 +45,7 @@ struct CreateRestaurantView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(name.isEmpty || adminPin.isEmpty || isLoading)
+            .disabled(name.isEmpty || adminUsername.isEmpty || adminPassword.isEmpty || isLoading)
         }
         .alert("Restaurant created", isPresented: .constant(createdSession != nil)) {
             Button("Continue") {
@@ -60,7 +65,7 @@ struct CreateRestaurantView: View {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            createdSession = try await api.createRestaurant(name: name, adminPin: adminPin)
+            createdSession = try await api.createRestaurant(name: name, adminUsername: adminUsername, adminPassword: adminPassword)
         } catch {
             errorMessage = error.localizedDescription
         }

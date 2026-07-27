@@ -95,10 +95,10 @@ async function authFetch(path: string, options: RequestInit = {}): Promise<Respo
 
 // --- Auth ---
 
-export async function createRestaurant(name: string, adminPin: string): Promise<AuthSession> {
+export async function createRestaurant(name: string, adminUsername: string, adminPassword: string): Promise<AuthSession> {
   const r = await authFetch('/restaurants', {
     method: 'POST',
-    body: JSON.stringify({ name, admin_pin: adminPin }),
+    body: JSON.stringify({ name, admin_username: adminUsername, admin_password: adminPassword }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.detail || 'Could not create restaurant');
@@ -115,13 +115,13 @@ export async function joinRestaurant(joinCode: string): Promise<AuthSession> {
   return toSession(data);
 }
 
-export async function adminLogin(joinCode: string, adminPin: string): Promise<AuthSession> {
+export async function adminLogin(username: string, password: string): Promise<AuthSession> {
   const r = await authFetch('/auth/admin-login', {
     method: 'POST',
-    body: JSON.stringify({ join_code: joinCode, admin_pin: adminPin }),
+    body: JSON.stringify({ username, password }),
   });
   const data = await r.json();
-  if (!r.ok) throw new Error(data.detail || 'Invalid join code or admin PIN');
+  if (!r.ok) throw new Error(data.detail || 'Invalid username or password');
   return toSession(data);
 }
 
@@ -132,12 +132,21 @@ export async function getAllergens(): Promise<Allergen[]> {
   return r.json();
 }
 
-export async function createAllergen(name: string): Promise<Allergen> {
+export async function createAllergen(name: string, description?: string): Promise<Allergen> {
   const r = await authFetch('/allergens', {
     method: 'POST',
-    body: JSON.stringify({ name, description: '' }),
+    body: JSON.stringify({ name, description: description || '' }),
   });
   return r.json();
+}
+
+export async function updateAllergen(id: number, data: { name?: string; description?: string }): Promise<Allergen> {
+  const r = await authFetch(`/allergens/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  return r.json();
+}
+
+export async function deleteAllergen(id: number): Promise<void> {
+  await authFetch(`/allergens/${id}`, { method: 'DELETE' });
 }
 
 // --- Food items ---

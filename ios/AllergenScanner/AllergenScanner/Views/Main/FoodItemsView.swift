@@ -8,6 +8,7 @@ struct FoodItemsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingAddSheet = false
+    @State private var editingItem: FoodItem?
 
     private var isAdmin: Bool { api.session?.role == .admin }
 
@@ -27,7 +28,10 @@ struct FoodItemsView: View {
                     }
                 }
                 .sheet(isPresented: $showingAddSheet) {
-                    AddFoodItemSheet(allergens: allergens) { await load() }
+                    FoodItemFormSheet(allergens: allergens, existing: nil) { await load() }
+                }
+                .sheet(item: $editingItem) { item in
+                    FoodItemFormSheet(allergens: allergens, existing: item) { await load() }
                 }
                 .task { await load() }
                 .refreshable { await load() }
@@ -45,21 +49,9 @@ struct FoodItemsView: View {
         } else {
             List {
                 ForEach(foodItems) { item in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(item.name).font(.headline)
-                        if let category = item.category, !category.isEmpty {
-                            Text(category)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if !item.allergens.isEmpty {
-                            AllergenChipsRow(allergens: item.allergens, style: .certain)
-                        }
-                        if !item.mayContainAllergens.isEmpty {
-                            AllergenChipsRow(allergens: item.mayContainAllergens, style: .mayContain)
-                        }
-                    }
-                    .padding(.vertical, 4)
+                    FoodItemRow(item: item)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if isAdmin { editingItem = item } }
                 }
                 .onDelete(perform: isAdmin ? delete : nil)
             }
@@ -88,6 +80,28 @@ struct FoodItemsView: View {
                 try? await api.deleteFoodItem(id: id)
             }
         }
+    }
+}
+
+private struct FoodItemRow: View {
+    let item: FoodItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(item.name).font(.headline)
+            if let category = item.category, !category.isEmpty {
+                Text(category)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !item.allergens.isEmpty {
+                AllergenChipsRow(allergens: item.allergens, style: .certain)
+            }
+            if !item.mayContainAllergens.isEmpty {
+                AllergenChipsRow(allergens: item.mayContainAllergens, style: .mayContain)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -135,19 +149,31 @@ struct AllergenChipsRow: View {
     }
 }
 
-private struct AddFoodItemSheet: View {
+private struct FoodItemFormSheet: View {
     @Environment(APIClient.self) private var api
     @Environment(\.dismiss) private var dismiss
     let allergens: [Allergen]
+    let existing: FoodItem?
     let onSaved: () async -> Void
 
-    @State private var name = ""
-    @State private var description = ""
-    @State private var category = ""
-    @State private var selectedAllergenIds: Set<Int> = []
-    @State private var selectedMayContainIds: Set<Int> = []
+    @State private var name: String
+    @State private var description: String
+    @State private var category: String
+    @State private var selectedAllergenIds: Set<Int>
+    @State private var selectedMayContainIds: Set<Int>
     @State private var isSaving = false
     @State private var errorMessage: String?
+
+    init(allergens: [Allergen], existing: FoodItem?, onSaved: @escaping () async -> Void) {
+        self.allergens = allergens
+        self.existing = existing
+        self.onSaved = onSaved
+        _name = State(initialValue: existing?.name ?? "")
+        _description = State(initialValue: existing?.description ?? "")
+        _category = State(initialValue: existing?.category ?? "")
+        _selectedAllergenIds = State(initialValue: Set(existing?.allergens.map(\.id) ?? []))
+        _selectedMayContainIds = State(initialValue: Set(existing?.mayContainAllergens.map(\.id) ?? []))
+    }
 
     var body: some View {
         NavigationStack {
@@ -197,7 +223,7 @@ private struct AddFoodItemSheet: View {
                     Text(errorMessage).foregroundStyle(.red)
                 }
             }
-            .navigationTitle("New Food Item")
+            .navigationTitle(existing == nil ? "New Food Item" : "Edit Food Item")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -224,13 +250,24 @@ private struct AddFoodItemSheet: View {
         errorMessage = nil
         defer { isSaving = false }
         do {
-            _ = try await api.createFoodItem(
-                name: name,
-                description: description.isEmpty ? nil : description,
-                category: category.isEmpty ? nil : category,
-                allergenIds: Array(selectedAllergenIds),
-                mayContainAllergenIds: Array(selectedMayContainIds)
-            )
+            if let existing {
+                _ = try await api.updateFoodItem(
+                    id: existing.id,
+                    name: name,
+                    description: description.isEmpty ? nil : description,
+                    category: category.isEmpty ? nil : category,
+                    allergenIds: Array(selectedAllergenIds),
+                    mayContainAllergenIds: Array(selectedMayContainIds)
+                )
+            } else {
+                _ = try await api.createFoodItem(
+                    name: name,
+                    description: description.isEmpty ? nil : description,
+                    category: category.isEmpty ? nil : category,
+                    allergenIds: Array(selectedAllergenIds),
+                    mayContainAllergenIds: Array(selectedMayContainIds)
+                )
+            }
             await onSaved()
             dismiss()
         } catch {

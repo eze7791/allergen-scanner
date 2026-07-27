@@ -5,6 +5,7 @@ import AppShell from "@/components/layout/AppShell"
 import ScanPage from "@/pages/ScanPage"
 import SearchPage from "@/pages/SearchPage"
 import RecipesPage from "@/pages/RecipesPage"
+import AllergensPage from "@/pages/AllergensPage"
 import OnboardingPage from "@/pages/OnboardingPage"
 import { getSession, type AuthSession } from "@/api"
 
@@ -24,6 +25,10 @@ export default function App() {
           <Routes>
             <Route path="/" element={<SearchPage />} />
             <Route path="/recipes" element={<RecipesPage />} />
+            <Route
+              path="/allergens"
+              element={session.role === "admin" ? <AllergensPage /> : <Navigate to="/" replace />}
+            />
             <Route
               path="/scan"
               element={session.role === "admin" ? <ScanPage /> : <Navigate to="/" replace />}

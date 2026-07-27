@@ -52,16 +52,20 @@ final class APIClient {
 
     // MARK: - Auth
 
-    func createRestaurant(name: String, adminPin: String) async throws -> AuthSession {
-        try await post("/restaurants", body: ["name": name, "admin_pin": adminPin], authenticated: false)
+    func createRestaurant(name: String, adminUsername: String, adminPassword: String) async throws -> AuthSession {
+        try await post(
+            "/restaurants",
+            body: ["name": name, "admin_username": adminUsername, "admin_password": adminPassword],
+            authenticated: false
+        )
     }
 
     func joinRestaurant(joinCode: String) async throws -> AuthSession {
         try await post("/restaurants/join", body: ["join_code": joinCode], authenticated: false)
     }
 
-    func adminLogin(joinCode: String, adminPin: String) async throws -> AuthSession {
-        try await post("/auth/admin-login", body: ["join_code": joinCode, "admin_pin": adminPin], authenticated: false)
+    func adminLogin(username: String, password: String) async throws -> AuthSession {
+        try await post("/auth/admin-login", body: ["username": username, "password": password], authenticated: false)
     }
 
     func logOut() {
@@ -78,6 +82,14 @@ final class APIClient {
         try await post("/allergens", body: ["name": name, "description": description as Any])
     }
 
+    func updateAllergen(id: Int, name: String, description: String?) async throws -> Allergen {
+        try await put("/allergens/\(id)", body: ["name": name, "description": description as Any])
+    }
+
+    func deleteAllergen(id: Int) async throws {
+        try await delete("/allergens/\(id)")
+    }
+
     // MARK: - Food items
 
     func fetchFoodItems() async throws -> [FoodItem] {
@@ -92,6 +104,23 @@ final class APIClient {
         mayContainAllergenIds: [Int]
     ) async throws -> FoodItem {
         try await post("/food-items", body: [
+            "name": name,
+            "description": description as Any,
+            "category": category as Any,
+            "allergen_ids": allergenIds,
+            "may_contain_allergen_ids": mayContainAllergenIds,
+        ])
+    }
+
+    func updateFoodItem(
+        id: Int,
+        name: String,
+        description: String?,
+        category: String?,
+        allergenIds: [Int],
+        mayContainAllergenIds: [Int]
+    ) async throws -> FoodItem {
+        try await put("/food-items/\(id)", body: [
             "name": name,
             "description": description as Any,
             "category": category as Any,
@@ -126,6 +155,23 @@ final class APIClient {
         ])
     }
 
+    func updateRecipe(
+        id: Int,
+        name: String,
+        description: String?,
+        category: String?,
+        allergenIds: [Int],
+        mayContainAllergenIds: [Int]
+    ) async throws -> Recipe {
+        try await put("/recipes/\(id)", body: [
+            "name": name,
+            "description": description as Any,
+            "category": category as Any,
+            "allergen_ids": allergenIds,
+            "may_contain_allergen_ids": mayContainAllergenIds,
+        ])
+    }
+
     func deleteRecipe(id: Int) async throws {
         try await delete("/recipes/\(id)")
     }
@@ -145,6 +191,11 @@ final class APIClient {
     private func post<T: Decodable>(_ path: String, body: [String: Any], authenticated: Bool = true) async throws -> T {
         let data = try JSONSerialization.data(withJSONObject: sanitize(body))
         return try await request(path, method: "POST", body: data, authenticated: authenticated)
+    }
+
+    private func put<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: sanitize(body))
+        return try await request(path, method: "PUT", body: data)
     }
 
     private func delete(_ path: String) async throws {

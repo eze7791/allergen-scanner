@@ -16,7 +16,6 @@ class RestaurantORM(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     join_code = Column(String, nullable=False, unique=True, index=True)
-    admin_pin_hash = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     users = relationship("UserORM", back_populates="restaurant", lazy="selectin")
@@ -28,6 +27,8 @@ class UserORM(Base):
     id = Column(Integer, primary_key=True, index=True)
     restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False, index=True)
     role = Column(Enum(UserRole), nullable=False)
+    username = Column(String, nullable=True, unique=True, index=True)
+    password_hash = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     restaurant = relationship("RestaurantORM", back_populates="users")

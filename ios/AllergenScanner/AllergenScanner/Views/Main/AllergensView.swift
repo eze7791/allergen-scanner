@@ -42,15 +42,29 @@ struct AllergensView: View {
         } else if allergens.isEmpty {
             ContentUnavailableView("No allergens yet", systemImage: "exclamationmark.triangle")
         } else {
-            List(allergens) { allergen in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(allergen.name).font(.headline)
-                    if let description = allergen.description, !description.isEmpty {
-                        Text(description)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+            List {
+                ForEach(allergens) { allergen in
+                    if isAdmin {
+                        NavigationLink {
+                            EditAllergenView(allergen: allergen) { await load() }
+                        } label: {
+                            AllergenRow(allergen: allergen)
+                        }
+                    } else {
+                        AllergenRow(allergen: allergen)
                     }
                 }
+                .onDelete(perform: isAdmin ? delete : nil)
+            }
+        }
+    }
+
+    private func delete(at offsets: IndexSet) {
+        let idsToDelete = offsets.map { allergens[$0].id }
+        allergens.remove(atOffsets: offsets)
+        Task {
+            for id in idsToDelete {
+                try? await api.deleteAllergen(id: id)
             }
         }
     }
@@ -61,6 +75,72 @@ struct AllergensView: View {
         defer { isLoading = false }
         do {
             allergens = try await api.fetchAllergens().sorted { $0.name < $1.name }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct AllergenRow: View {
+    let allergen: Allergen
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(allergen.name).font(.headline)
+            if let description = allergen.description, !description.isEmpty {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct EditAllergenView: View {
+    @Environment(APIClient.self) private var api
+    @Environment(\.dismiss) private var dismiss
+    let allergen: Allergen
+    let onSaved: () async -> Void
+
+    @State private var name: String
+    @State private var description: String
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(allergen: Allergen, onSaved: @escaping () async -> Void) {
+        self.allergen = allergen
+        self.onSaved = onSaved
+        _name = State(initialValue: allergen.name)
+        _description = State(initialValue: allergen.description ?? "")
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Name", text: $name)
+                TextField("Description (optional)", text: $description)
+            }
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red)
+            }
+        }
+        .navigationTitle("Edit Allergen")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { Task { await save() } }
+                    .disabled(name.isEmpty || isSaving)
+            }
+        }
+    }
+
+    private func save() async {
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            _ = try await api.updateAllergen(id: allergen.id, name: name, description: description.isEmpty ? nil : description)
+            await onSaved()
+            dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
