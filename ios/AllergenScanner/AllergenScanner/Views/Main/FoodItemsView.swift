@@ -14,27 +14,27 @@ struct FoodItemsView: View {
 
     var body: some View {
         NavigationStack {
-            content
-                .navigationTitle("Food Items")
-                .toolbar {
-                    if isAdmin {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showingAddSheet = true
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                        }
-                    }
+            ZStack(alignment: .bottomTrailing) {
+                MeshBackground()
+                content
+                if isAdmin {
+                    FloatingActionButton(systemImage: "plus") { showingAddSheet = true }
+                        .padding(20)
                 }
-                .sheet(isPresented: $showingAddSheet) {
-                    FoodItemFormSheet(allergens: allergens, existing: nil) { await load() }
-                }
-                .sheet(item: $editingItem) { item in
-                    FoodItemFormSheet(allergens: allergens, existing: item) { await load() }
-                }
-                .task { await load() }
-                .refreshable { await load() }
+            }
+            .navigationTitle("Food Items")
+            .sheet(isPresented: $showingAddSheet) {
+                FoodItemFormSheet(allergens: allergens, existing: nil) { await load() }
+                    .presentationCornerRadius(32)
+                    .presentationBackground(.thinMaterial)
+            }
+            .sheet(item: $editingItem) { item in
+                FoodItemFormSheet(allergens: allergens, existing: item) { await load() }
+                    .presentationCornerRadius(32)
+                    .presentationBackground(.thinMaterial)
+            }
+            .task { await load() }
+            .refreshable { await load() }
         }
     }
 
@@ -58,6 +58,7 @@ struct FoodItemsView: View {
                     Section {
                         ForEach(group.items) { item in
                             FoodItemRow(item: item)
+                                .glassCard(cornerRadius: 18)
                                 .contentShape(Rectangle())
                                 .onTapGesture { if isAdmin { editingItem = item } }
                                 .swipeActions(edge: .trailing) {
@@ -71,13 +72,17 @@ struct FoodItemsView: View {
                                         .tint(.teal)
                                     }
                                 }
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
                         }
                     } header: {
                         Text(group.category)
                     }
                 }
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
     }
 
@@ -120,7 +125,8 @@ private struct FoodItemRow: View {
                 }
             }
         }
-        .padding(.vertical, 6)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -282,6 +288,7 @@ private struct FoodItemFormSheet: View {
                     Text(errorMessage).foregroundStyle(.red)
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle(existing == nil ? "New Food Item" : "Edit Food Item")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

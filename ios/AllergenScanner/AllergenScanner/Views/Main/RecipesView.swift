@@ -14,27 +14,27 @@ struct RecipesView: View {
 
     var body: some View {
         NavigationStack {
-            content
-                .navigationTitle("Dishes")
-                .toolbar {
-                    if isAdmin {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showingAddSheet = true
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                        }
-                    }
+            ZStack(alignment: .bottomTrailing) {
+                MeshBackground()
+                content
+                if isAdmin {
+                    FloatingActionButton(systemImage: "plus") { showingAddSheet = true }
+                        .padding(20)
                 }
-                .sheet(isPresented: $showingAddSheet) {
-                    RecipeFormSheet(allergens: allergens, existing: nil) { await load() }
-                }
-                .sheet(item: $editingRecipe) { recipe in
-                    RecipeFormSheet(allergens: allergens, existing: recipe) { await load() }
-                }
-                .task { await load() }
-                .refreshable { await load() }
+            }
+            .navigationTitle("Dishes")
+            .sheet(isPresented: $showingAddSheet) {
+                RecipeFormSheet(allergens: allergens, existing: nil) { await load() }
+                    .presentationCornerRadius(32)
+                    .presentationBackground(.thinMaterial)
+            }
+            .sheet(item: $editingRecipe) { recipe in
+                RecipeFormSheet(allergens: allergens, existing: recipe) { await load() }
+                    .presentationCornerRadius(32)
+                    .presentationBackground(.thinMaterial)
+            }
+            .task { await load() }
+            .refreshable { await load() }
         }
     }
 
@@ -58,6 +58,7 @@ struct RecipesView: View {
                     Section {
                         ForEach(group.recipes) { recipe in
                             RecipeRow(recipe: recipe)
+                                .glassCard(cornerRadius: 18)
                                 .contentShape(Rectangle())
                                 .onTapGesture { if isAdmin { editingRecipe = recipe } }
                                 .swipeActions(edge: .trailing) {
@@ -71,13 +72,17 @@ struct RecipesView: View {
                                         .tint(.teal)
                                     }
                                 }
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
                         }
                     } header: {
                         Text(group.category)
                     }
                 }
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
     }
 
@@ -120,7 +125,8 @@ private struct RecipeRow: View {
                 }
             }
         }
-        .padding(.vertical, 6)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -196,6 +202,7 @@ private struct RecipeFormSheet: View {
                     Text(errorMessage).foregroundStyle(.red)
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle(existing == nil ? "New Dish" : "Edit Dish")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

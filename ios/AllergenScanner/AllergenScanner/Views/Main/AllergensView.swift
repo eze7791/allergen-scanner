@@ -7,29 +7,33 @@ struct AllergensView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showingAddSheet = false
+    @State private var editingAllergen: Allergen?
 
     private var isAdmin: Bool { api.session?.role == .admin }
 
     var body: some View {
         NavigationStack {
-            content
-                .navigationTitle("Allergens")
-                .toolbar {
-                    if isAdmin {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showingAddSheet = true
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                        }
-                    }
+            ZStack(alignment: .bottomTrailing) {
+                MeshBackground()
+                content
+                if isAdmin {
+                    FloatingActionButton(systemImage: "plus") { showingAddSheet = true }
+                        .padding(20)
                 }
-                .sheet(isPresented: $showingAddSheet) {
-                    AddAllergenSheet { await load() }
-                }
-                .task { await load() }
-                .refreshable { await load() }
+            }
+            .navigationTitle("Allergens")
+            .sheet(isPresented: $showingAddSheet) {
+                AllergenFormSheet(existing: nil) { await load() }
+                    .presentationCornerRadius(32)
+                    .presentationBackground(.thinMaterial)
+            }
+            .sheet(item: $editingAllergen) { allergen in
+                AllergenFormSheet(existing: allergen) { await load() }
+                    .presentationCornerRadius(32)
+                    .presentationBackground(.thinMaterial)
+            }
+            .task { await load() }
+            .refreshable { await load() }
         }
     }
 
@@ -44,29 +48,34 @@ struct AllergensView: View {
         } else {
             List {
                 ForEach(allergens) { allergen in
-                    if isAdmin {
-                        NavigationLink {
-                            EditAllergenView(allergen: allergen) { await load() }
-                        } label: {
-                            AllergenRow(allergen: allergen)
+                    AllergenRow(allergen: allergen)
+                        .glassCard(cornerRadius: 18)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if isAdmin { editingAllergen = allergen } }
+                        .swipeActions(edge: .trailing) {
+                            if isAdmin {
+                                Button(role: .destructive) { deleteOne(allergen) } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                Button { editingAllergen = allergen } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.teal)
+                            }
                         }
-                    } else {
-                        AllergenRow(allergen: allergen)
-                    }
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
-                .onDelete(perform: isAdmin ? delete : nil)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
     }
 
-    private func delete(at offsets: IndexSet) {
-        let idsToDelete = offsets.map { allergens[$0].id }
-        allergens.remove(atOffsets: offsets)
-        Task {
-            for id in idsToDelete {
-                try? await api.deleteAllergen(id: id)
-            }
-        }
+    private func deleteOne(_ allergen: Allergen) {
+        allergens.removeAll { $0.id == allergen.id }
+        Task { try? await api.deleteAllergen(id: allergen.id) }
     }
 
     private func load() async {
@@ -93,13 +102,15 @@ private struct AllergenRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-private struct EditAllergenView: View {
+private struct AllergenFormSheet: View {
     @Environment(APIClient.self) private var api
     @Environment(\.dismiss) private var dismiss
-    let allergen: Allergen
+    let existing: Allergen?
     let onSaved: () async -> Void
 
     @State private var name: String
@@ -107,55 +118,12 @@ private struct EditAllergenView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    init(allergen: Allergen, onSaved: @escaping () async -> Void) {
-        self.allergen = allergen
+    init(existing: Allergen?, onSaved: @escaping () async -> Void) {
+        self.existing = existing
         self.onSaved = onSaved
-        _name = State(initialValue: allergen.name)
-        _description = State(initialValue: allergen.description ?? "")
+        _name = State(initialValue: existing?.name ?? "")
+        _description = State(initialValue: existing?.description ?? "")
     }
-
-    var body: some View {
-        Form {
-            Section {
-                TextField("Name", text: $name)
-                TextField("Description (optional)", text: $description)
-            }
-            if let errorMessage {
-                Text(errorMessage).foregroundStyle(.red)
-            }
-        }
-        .navigationTitle("Edit Allergen")
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { Task { await save() } }
-                    .disabled(name.isEmpty || isSaving)
-            }
-        }
-    }
-
-    private func save() async {
-        isSaving = true
-        errorMessage = nil
-        defer { isSaving = false }
-        do {
-            _ = try await api.updateAllergen(id: allergen.id, name: name, description: description.isEmpty ? nil : description)
-            await onSaved()
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-}
-
-private struct AddAllergenSheet: View {
-    @Environment(APIClient.self) private var api
-    @Environment(\.dismiss) private var dismiss
-    let onSaved: () async -> Void
-
-    @State private var name = ""
-    @State private var description = ""
-    @State private var isSaving = false
-    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -168,7 +136,8 @@ private struct AddAllergenSheet: View {
                     Text(errorMessage).foregroundStyle(.red)
                 }
             }
-            .navigationTitle("New Allergen")
+            .scrollContentBackground(.hidden)
+            .navigationTitle(existing == nil ? "New Allergen" : "Edit Allergen")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -186,7 +155,11 @@ private struct AddAllergenSheet: View {
         errorMessage = nil
         defer { isSaving = false }
         do {
-            _ = try await api.createAllergen(name: name, description: description.isEmpty ? nil : description)
+            if let existing {
+                _ = try await api.updateAllergen(id: existing.id, name: name, description: description.isEmpty ? nil : description)
+            } else {
+                _ = try await api.createAllergen(name: name, description: description.isEmpty ? nil : description)
+            }
             await onSaved()
             dismiss()
         } catch {

@@ -33,14 +33,17 @@ struct SearchView: View {
 
     var body: some View {
         NavigationStack {
-            content
-                .navigationTitle("Search")
-                .searchable(text: $query, prompt: "Search dishes and products")
-                .onChange(of: query) { _, newValue in
-                    if !newValue.isEmpty { selectedCategory = nil }
-                }
-                .task { await load() }
-                .refreshable { await load() }
+            ZStack {
+                MeshBackground()
+                content
+            }
+            .navigationTitle("Search")
+            .searchable(text: $query, prompt: "Search dishes and products")
+            .onChange(of: query) { _, newValue in
+                if !newValue.isEmpty { selectedCategory = nil }
+            }
+            .task { await load() }
+            .refreshable { await load() }
         }
     }
 
@@ -50,57 +53,61 @@ struct SearchView: View {
             ProgressView()
         } else if let errorMessage, foodItems.isEmpty && recipes.isEmpty {
             ContentUnavailableView("Couldn't load the menu", systemImage: "wifi.slash", description: Text(errorMessage))
-        } else if query.isEmpty && selectedCategory == nil {
-            VStack(spacing: 0) {
-                if !categories.isEmpty {
-                    CategoryChipsRow(categories: categories, selected: selectedCategory) { cat in
-                        selectedCategory = (selectedCategory == cat) ? nil : cat
-                    }
-                }
-                ContentUnavailableView(
-                    "Search for a dish",
-                    systemImage: "magnifyingglass",
-                    description: Text("Find a dish or product, or browse by category above")
-                )
-            }
-        } else if filteredRecipes.isEmpty && filteredItems.isEmpty {
-            ContentUnavailableView.search(text: query)
         } else {
-            List {
-                if !categories.isEmpty {
-                    CategoryChipsRow(categories: categories, selected: selectedCategory) { cat in
-                        query = ""
-                        selectedCategory = (selectedCategory == cat) ? nil : cat
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    if !categories.isEmpty {
+                        GlassChipRow(
+                            items: categories,
+                            label: { $0 },
+                            selected: selectedCategory,
+                            onTap: { cat in
+                                query = ""
+                                selectedCategory = (selectedCategory == cat) ? nil : cat
+                            }
+                        )
                     }
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                }
-                if !filteredRecipes.isEmpty {
-                    Section("Dishes") {
-                        ForEach(filteredRecipes) { recipe in
-                            SearchResultRow(
-                                name: recipe.name,
-                                category: recipe.category,
-                                allergens: recipe.allergens,
-                                mayContainAllergens: recipe.mayContainAllergens
-                            )
+
+                    if query.isEmpty && selectedCategory == nil {
+                        ContentUnavailableView(
+                            "Search for a dish",
+                            systemImage: "magnifyingglass",
+                            description: Text("Find a dish or product, or browse by category above")
+                        )
+                        .padding(.top, 40)
+                    } else if filteredRecipes.isEmpty && filteredItems.isEmpty {
+                        ContentUnavailableView.search(text: query)
+                            .padding(.top, 40)
+                    } else {
+                        if !filteredRecipes.isEmpty {
+                            SearchResultSection(title: "Dishes") {
+                                ForEach(filteredRecipes) { recipe in
+                                    SearchResultRow(
+                                        name: recipe.name,
+                                        category: recipe.category,
+                                        allergens: recipe.allergens,
+                                        mayContainAllergens: recipe.mayContainAllergens
+                                    )
+                                }
+                            }
+                        }
+                        if !filteredItems.isEmpty {
+                            SearchResultSection(title: "Products") {
+                                ForEach(filteredItems) { item in
+                                    SearchResultRow(
+                                        name: item.name,
+                                        category: item.category,
+                                        allergens: item.allergens,
+                                        mayContainAllergens: item.mayContainAllergens
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-                if !filteredItems.isEmpty {
-                    Section("Products") {
-                        ForEach(filteredItems) { item in
-                            SearchResultRow(
-                                name: item.name,
-                                category: item.category,
-                                allergens: item.allergens,
-                                mayContainAllergens: item.mayContainAllergens
-                            )
-                        }
-                    }
-                }
+                .padding(.horizontal)
+                .padding(.bottom, 24)
             }
-            .listStyle(.plain)
         }
     }
 
@@ -119,33 +126,19 @@ struct SearchView: View {
     }
 }
 
-private struct CategoryChipsRow: View {
-    let categories: [String]
-    let selected: String?
-    let onTap: (String) -> Void
+private struct SearchResultSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(categories, id: \.self) { cat in
-                    Button {
-                        onTap(cat)
-                    } label: {
-                        Text(cat)
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(
-                                Capsule().fill(selected == cat ? Color.accentColor : Color(.secondarySystemBackground))
-                            )
-                            .foregroundStyle(selected == cat ? Color.white : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            VStack(spacing: 10) {
+                content
             }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
         }
     }
 }
@@ -157,13 +150,18 @@ private struct SearchResultRow: View {
     let mayContainAllergens: [Allergen]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(name).font(.headline)
-            if let category, !category.isEmpty {
-                Text(category)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Color.accentColor)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(name).font(.headline)
+                Spacer()
+                if let category, !category.isEmpty {
+                    Text(category)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.teal)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.teal.opacity(0.12), in: Capsule())
+                }
             }
             if allergens.isEmpty && mayContainAllergens.isEmpty {
                 Text("No allergens on record")
@@ -178,7 +176,9 @@ private struct SearchResultRow: View {
                 }
             }
         }
-        .padding(.vertical, 6)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(cornerRadius: 20)
     }
 }
 
