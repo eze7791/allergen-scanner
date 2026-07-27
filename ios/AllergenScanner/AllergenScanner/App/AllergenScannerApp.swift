@@ -16,10 +16,13 @@ struct RootView: View {
     @Environment(APIClient.self) private var api
 
     var body: some View {
-        if api.session != nil {
-            MainTabView()
-        } else {
-            OnboardingView()
+        Group {
+            if api.session != nil {
+                MainTabView()
+            } else {
+                OnboardingView()
+            }
         }
+        .tint(.teal)
     }
 }

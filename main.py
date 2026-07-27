@@ -28,6 +28,7 @@ from auth import (
     hash_pin,
     verify_pin,
     generate_join_code,
+    normalize_join_code,
     create_access_token,
 )
 try:
@@ -183,7 +184,9 @@ async def create_restaurant(data: RestaurantCreate, db: AsyncSession = Depends(g
 
 @app.post("/restaurants/join", response_model=RestaurantAuthOut)
 async def join_restaurant(data: RestaurantJoin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(RestaurantORM).where(RestaurantORM.join_code == data.join_code))
+    result = await db.execute(
+        select(RestaurantORM).where(RestaurantORM.join_code == normalize_join_code(data.join_code))
+    )
     restaurant = result.scalar_one_or_none()
     if not restaurant:
         raise HTTPException(status_code=404, detail="Invalid join code")
@@ -205,7 +208,9 @@ async def join_restaurant(data: RestaurantJoin, db: AsyncSession = Depends(get_d
 
 @app.post("/auth/admin-login", response_model=RestaurantAuthOut)
 async def admin_login(data: AdminLogin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(RestaurantORM).where(RestaurantORM.join_code == data.join_code))
+    result = await db.execute(
+        select(RestaurantORM).where(RestaurantORM.join_code == normalize_join_code(data.join_code))
+    )
     restaurant = result.scalar_one_or_none()
     if not restaurant or not verify_pin(data.admin_pin, restaurant.admin_pin_hash):
         raise HTTPException(status_code=401, detail="Invalid join code or admin PIN")

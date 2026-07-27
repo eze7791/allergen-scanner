@@ -1,6 +1,5 @@
 import os
 import random
-import string
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -27,9 +26,15 @@ def verify_pin(pin: str, pin_hash: str) -> bool:
     return bcrypt.checkpw(pin.encode(), pin_hash.encode())
 
 
+JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I, avoids ambiguity
+
+
 def generate_join_code() -> str:
-    digits = "".join(random.choices(string.digits, k=4))
-    return f"REST-{digits}"
+    return "".join(random.choices(JOIN_CODE_ALPHABET, k=6))
+
+
+def normalize_join_code(code: str) -> str:
+    return code.strip().upper()
 
 
 def create_access_token(user_id: int, restaurant_id: int, role: UserRole) -> str:

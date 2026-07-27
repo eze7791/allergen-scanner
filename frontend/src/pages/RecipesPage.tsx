@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { getRecipes, createRecipe, deleteRecipe, getAllergens, type Allergen, type Recipe } from "@/api"
+import { getRecipes, createRecipe, deleteRecipe, getAllergens, getSession, type Allergen, type Recipe } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,6 +21,7 @@ export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [loading, setLoading] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Recipe | null>(null)
+  const isAdmin = getSession()?.role === "admin"
 
   useEffect(() => {
     getAllergens().then(setAllergens)
@@ -93,44 +94,46 @@ export default function RecipesPage() {
         <p className="text-sm text-muted-foreground mt-1">Manage the menu and each dish's allergens</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Add Dish</CardTitle>
-          <CardDescription>Tag a menu item with the allergens it contains or may contain</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Dish name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Oklahoma Stack" />
-          </div>
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Add Dish</CardTitle>
+            <CardDescription>Tag a menu item with the allergens it contains or may contain</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Dish name</Label>
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Oklahoma Stack" />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="category">Category (optional)</Label>
-            <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Burgers" />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="category">Category (optional)</Label>
+              <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Burgers" />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="desc">Description (optional)</Label>
-            <Textarea id="desc" value={desc} onChange={(e) => setDesc(e.target.value)} rows={2} />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="desc">Description (optional)</Label>
+              <Textarea id="desc" value={desc} onChange={(e) => setDesc(e.target.value)} rows={2} />
+            </div>
 
-          <div className="space-y-2">
-            <Label>Contains</Label>
-            <AllergenPicker allergens={allergens} selectedIds={selectedIds} onToggle={toggle(setSelectedIds)} />
-          </div>
+            <div className="space-y-2">
+              <Label>Contains</Label>
+              <AllergenPicker allergens={allergens} selectedIds={selectedIds} onToggle={toggle(setSelectedIds)} />
+            </div>
 
-          <div className="space-y-2">
-            <Label>May contain</Label>
-            <AllergenPicker allergens={allergens} selectedIds={mcSelectedIds} onToggle={toggle(setMcSelectedIds)} />
-          </div>
-        </CardContent>
-        <CardFooter>
-          <Button onClick={create} disabled={!name.trim() || loading} className="w-full gap-2">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            {loading ? "Creating..." : "Add Dish"}
-          </Button>
-        </CardFooter>
-      </Card>
+            <div className="space-y-2">
+              <Label>May contain</Label>
+              <AllergenPicker allergens={allergens} selectedIds={mcSelectedIds} onToggle={toggle(setMcSelectedIds)} />
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={create} disabled={!name.trim() || loading} className="w-full gap-2">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {loading ? "Creating..." : "Add Dish"}
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
 
       {recipes.length === 0 ? (
         <div className="py-12 text-center text-sm text-muted-foreground">No dishes yet. Add one above.</div>
@@ -151,14 +154,16 @@ export default function RecipesPage() {
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0">None</Badge>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground opacity-100 hover:text-destructive md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                      onClick={() => setDeleteTarget(r)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-muted-foreground opacity-100 hover:text-destructive md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                        onClick={() => setDeleteTarget(r)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

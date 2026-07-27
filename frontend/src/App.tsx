@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { HashRouter, Routes, Route } from "react-router-dom"
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom"
 import { Toaster } from "sonner"
 import AppShell from "@/components/layout/AppShell"
 import ScanPage from "@/pages/ScanPage"
@@ -24,7 +24,10 @@ export default function App() {
           <Routes>
             <Route path="/" element={<SearchPage />} />
             <Route path="/recipes" element={<RecipesPage />} />
-            <Route path="/scan" element={<ScanPage />} />
+            <Route
+              path="/scan"
+              element={session.role === "admin" ? <ScanPage /> : <Navigate to="/" replace />}
+            />
           </Routes>
         </AppShell>
       ) : (

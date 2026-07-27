@@ -97,8 +97,8 @@ enum AllergenChipStyle {
 
     var color: Color {
         switch self {
-        case .certain: return .orange
-        case .mayContain: return .yellow
+        case .certain: return .red
+        case .mayContain: return .orange
         }
     }
 

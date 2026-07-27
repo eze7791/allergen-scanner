@@ -8,6 +8,9 @@ import {
   getAllergens,
   updateRecipe,
   deleteRecipe,
+  getFoodItems,
+  getRecipes,
+  getSession,
   type Allergen,
   type FoodItem,
   type Recipe,
@@ -32,14 +35,43 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [allergens, setAllergens] = useState<Allergen[]>([])
+  const [allItems, setAllItems] = useState<FoodItem[]>([])
+  const [allRecipes, setAllRecipes] = useState<Recipe[]>([])
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const isAdmin = getSession()?.role === "admin"
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     getAllergens().then(setAllergens)
+    Promise.all([getFoodItems(), getRecipes()]).then(([f, r]) => {
+      setAllItems(f)
+      setAllRecipes(r)
+    })
   }, [])
+
+  const categories = Array.from(
+    new Set([...allItems, ...allRecipes].map((x) => x.category).filter((c): c is string => !!c))
+  ).sort()
+
+  const selectCategory = (cat: string) => {
+    clearTimeout(debounceRef.current)
+    setQuery("")
+    if (activeCategory === cat) {
+      setActiveCategory(null)
+      setItems([])
+      setRecipes([])
+      setSearched(false)
+      return
+    }
+    setActiveCategory(cat)
+    setSearched(true)
+    setItems(allItems.filter((i) => i.category === cat))
+    setRecipes(allRecipes.filter((r) => r.category === cat))
+  }
 
   const doSearch = (q: string) => {
     setQuery(q)
+    setActiveCategory(null)
     clearTimeout(debounceRef.current)
     if (!q.trim()) {
       setItems([])
@@ -104,6 +136,24 @@ export default function SearchPage() {
         />
       </div>
 
+      {categories.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => selectCategory(cat)}
+              className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors cursor-pointer ${
+                activeCategory === cat
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && (
         <div className="flex justify-center py-12">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -125,6 +175,7 @@ export default function SearchPage() {
                 key={recipe.id}
                 recipe={recipe}
                 allergens={allergens}
+                isAdmin={isAdmin}
                 onDelete={handleDeleteRecipe}
                 onUpdate={(updated) =>
                   setRecipes((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
@@ -144,6 +195,7 @@ export default function SearchPage() {
                 key={item.id}
                 item={item}
                 allergens={allergens}
+                isAdmin={isAdmin}
                 onDelete={handleDeleteItem}
                 onUpdate={(updated) =>
                   setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
@@ -160,11 +212,13 @@ export default function SearchPage() {
 function ItemCard({
   item,
   allergens,
+  isAdmin,
   onDelete,
   onUpdate,
 }: {
   item: FoodItem
   allergens: Allergen[]
+  isAdmin: boolean
   onDelete: (id: number) => void
   onUpdate: (item: FoodItem) => void
 }) {
@@ -232,6 +286,7 @@ function ItemCard({
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">None</Badge>
             )}
           </div>
+          {isAdmin && (
           <div className="flex gap-1 shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
@@ -302,6 +357,7 @@ function ItemCard({
               </DialogContent>
             </Dialog>
           </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -311,11 +367,13 @@ function ItemCard({
 function RecipeCard({
   recipe,
   allergens,
+  isAdmin,
   onDelete,
   onUpdate,
 }: {
   recipe: Recipe
   allergens: Allergen[]
+  isAdmin: boolean
   onDelete: (id: number) => void
   onUpdate: (recipe: Recipe) => void
 }) {
@@ -389,6 +447,7 @@ function RecipeCard({
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">None</Badge>
             )}
           </div>
+          {isAdmin && (
           <div className="flex gap-1 shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
@@ -459,6 +518,7 @@ function RecipeCard({
               </DialogContent>
             </Dialog>
           </div>
+          )}
         </div>
       </CardContent>
     </Card>

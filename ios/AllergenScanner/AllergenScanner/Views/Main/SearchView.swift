@@ -12,13 +12,21 @@ struct SearchView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var query = ""
+    @State private var selectedCategory: String?
+
+    private var categories: [String] {
+        let all = (foodItems.map(\.category) + recipes.map(\.category)).compactMap { $0 }
+        return Array(Set(all)).sorted()
+    }
 
     private var filteredRecipes: [Recipe] {
+        if let selectedCategory { return recipes.filter { $0.category == selectedCategory } }
         guard !query.isEmpty else { return [] }
         return recipes.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     private var filteredItems: [FoodItem] {
+        if let selectedCategory { return foodItems.filter { $0.category == selectedCategory } }
         guard !query.isEmpty else { return [] }
         return foodItems.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
@@ -28,6 +36,9 @@ struct SearchView: View {
             content
                 .navigationTitle("Search")
                 .searchable(text: $query, prompt: "Search dishes and products")
+                .onChange(of: query) { _, newValue in
+                    if !newValue.isEmpty { selectedCategory = nil }
+                }
                 .task { await load() }
                 .refreshable { await load() }
         }
@@ -39,16 +50,31 @@ struct SearchView: View {
             ProgressView()
         } else if let errorMessage, foodItems.isEmpty && recipes.isEmpty {
             ContentUnavailableView("Couldn't load the menu", systemImage: "wifi.slash", description: Text(errorMessage))
-        } else if query.isEmpty {
-            ContentUnavailableView(
-                "Search for a dish",
-                systemImage: "magnifyingglass",
-                description: Text("Find a dish or product to see its allergens")
-            )
+        } else if query.isEmpty && selectedCategory == nil {
+            VStack(spacing: 0) {
+                if !categories.isEmpty {
+                    CategoryChipsRow(categories: categories, selected: selectedCategory) { cat in
+                        selectedCategory = (selectedCategory == cat) ? nil : cat
+                    }
+                }
+                ContentUnavailableView(
+                    "Search for a dish",
+                    systemImage: "magnifyingglass",
+                    description: Text("Find a dish or product, or browse by category above")
+                )
+            }
         } else if filteredRecipes.isEmpty && filteredItems.isEmpty {
             ContentUnavailableView.search(text: query)
         } else {
             List {
+                if !categories.isEmpty {
+                    CategoryChipsRow(categories: categories, selected: selectedCategory) { cat in
+                        query = ""
+                        selectedCategory = (selectedCategory == cat) ? nil : cat
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                }
                 if !filteredRecipes.isEmpty {
                     Section("Dishes") {
                         ForEach(filteredRecipes) { recipe in
@@ -93,6 +119,37 @@ struct SearchView: View {
     }
 }
 
+private struct CategoryChipsRow: View {
+    let categories: [String]
+    let selected: String?
+    let onTap: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories, id: \.self) { cat in
+                    Button {
+                        onTap(cat)
+                    } label: {
+                        Text(cat)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule().fill(selected == cat ? Color.accentColor : Color(.secondarySystemBackground))
+                            )
+                            .foregroundStyle(selected == cat ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+        }
+    }
+}
+
 private struct SearchResultRow: View {
     let name: String
     let category: String?
@@ -105,7 +162,8 @@ private struct SearchResultRow: View {
             if let category, !category.isEmpty {
                 Text(category)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.accentColor)
             }
             if allergens.isEmpty && mayContainAllergens.isEmpty {
                 Text("No allergens on record")
@@ -120,7 +178,7 @@ private struct SearchResultRow: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 }
 

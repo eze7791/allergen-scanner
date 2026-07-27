@@ -93,8 +93,10 @@ export default function OnboardingPage() {
                 <Input
                   id="joincode"
                   value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value)}
-                  placeholder="REST-1234"
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. K3F9QZ"
+                  autoCapitalize="characters"
+                  className="tracking-widest uppercase"
                 />
               </div>
             )}

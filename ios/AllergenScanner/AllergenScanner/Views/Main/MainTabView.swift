@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct MainTabView: View {
+    @Environment(APIClient.self) private var api
+
+    private var isAdmin: Bool { api.session?.role == .admin }
+
     var body: some View {
         TabView {
             Tab("Search", systemImage: "magnifyingglass") {
@@ -9,8 +13,10 @@ struct MainTabView: View {
             Tab("Dishes", systemImage: "list.bullet.rectangle") {
                 RecipesView()
             }
-            Tab("Scan", systemImage: "camera.viewfinder") {
-                ScanView()
+            if isAdmin {
+                Tab("Scan", systemImage: "camera.viewfinder") {
+                    ScanView()
+                }
             }
             Tab("Food Items", systemImage: "fork.knife") {
                 FoodItemsView()
